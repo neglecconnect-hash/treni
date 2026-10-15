@@ -9,15 +9,16 @@ const UNIT = { total: 'кг', side: 'кг на сторону', added: 'кг д�
 const ICON_UP = '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>';
 const ICON_X = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const ICON_SWAP = '<svg viewBox="0 0 24 24"><path d="M5 8h13l-3.5-3.5M19 16H6l3.5 3.5"/></svg>';
+const ICON_OK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 const CAT = Object.fromEntries(CATALOG.map(c => [c.name, c]));
 const II = icon => `<span class="ii">${icon}</span>`;
 
 // Мини-гайд: [заголовок, текст с разметкой]. Тексты для человека в зале: коротко, без терминов
 const GUIDE_USE = [
-  ['Сегодня', `Приложение само собирает тренировку из того, что ты давно не делал. Не хочешь упражнение: ${II(ICON_SWAP)} заменит на похожее, ${II(ICON_X)} уберёт. Потом «Начать».`],
-  ['Подход', 'В карточке уже стоят вес и повторы по плану. Сделай подход. Вышло иначе: поправь кнопками − и +. Потом «Записать подход». Разминку отметь кнопкой «Разминка».'],
+  ['Сегодня', `Приложение само собирает тренировку из того, что ты давно не делал. Не хочешь упражнение: ${II(ICON_SWAP)} заменит на похожее, ${II(ICON_X)} уберёт. Потом «Приступить».`],
+  ['Подход', 'Подходы идут списком, текущий подсвечен синим, вес и повторы уже стоят по плану. Сделай подход и жми «Сделано»: строка позеленеет, начнётся отдых. Вышло иначе: сначала поправь кнопками − и +. Разминку отметь кнопкой «Разминка».'],
   ['Отдых', 'На часах запусти «Тренировка», «Силовая» и смотри на пульс. Упал ниже порога (110 в начале, 115 ближе к концу): жми «Начать подход». Таймер зеленеет, когда в прошлый раз уже было пора.'],
-  ['Ошибся', 'На экране отдыха «Исправить»: подход вернётся в поля. Или нажми на записанный подход в карточке: он удалится, а внизу будет «Вернуть».'],
+  ['Ошибся', 'На экране отдыха «Исправить»: подход вернётся в поля. Или нажми на зелёный подход в списке: он удалится, а внизу будет «Вернуть».'],
   ['Конец', '«Закончить»: итог, сколько поднял, рекорды. Тренировка сама сохранится в GitHub.'],
   ['Пульс', 'Дома запусти команду «Трени пульс» и нажми «Вставить пульс» на экране итога. Приложение разберёт каждый отдых. Как собрать команду: вторая вкладка этого гайда.'],
   ['Остальное', '«Упражнения»: все упражнения с фото и техникой. «Прогресс»: графики и прошлые тренировки. «Настройки»: пороги, цель, GitHub.'],
@@ -426,27 +427,36 @@ function workoutPage() {
         ${chips ? `<div class="chips">${chips}</div>` : ''}</section>`;
     }
     const D = A.draft || (A.draft = draftFor(i));
-    const chips = done.map(s => `<button class="chip${s.warm ? ' warm' : ''}${s.pr ? ' pr' : ''}" data-act="delset" data-k="${s.k}">${s.pr ? '★ ' : ''}${setText(s, kind)}</button>`).join('');
-    // Пунктиром то, что осталось сделать по прошлому разу: подходы «заполняются» по ходу
-    const prevS = [...db.sessions].reverse().find(s => s.sets.some(x => x.ex === it.ex));
-    const ghost = (prevS?.sets.filter(x => x.ex === it.ex) || []).slice(done.length)
-      .map(s => `<span class="chip ghost">${setText(s, kind)}</span>`).join('');
+    const sg = suggest(lastOf(it.ex), it, kind);
+    // Подходы чек-листом: сделанные зелёные с галочкой, текущий подсвечен, впереди бледные по плану.
+    // Нажатие на сделанный удаляет его (внизу «Вернуть»)
+    let wn = 0;
+    const no = s => (s.warm ? 'Р' : ++wn);
+    const rows = done.map(s => `<div class="set ok${s.warm ? ' warm' : ''}"><span class="sn">${no(s)}</span>
+      <button class="sv${s.pr ? ' pr' : ''}" data-act="delset" data-k="${s.k}">${s.pr ? '★ ' : ''}${setText(s, kind)}</button><span class="sc">${ICON_OK}</span></div>`);
+    rows.push(`<div class="set now${D.warm ? ' warm' : ''}"><span class="sn">${no(D)}</span><span class="sv">${setText(D, kind)}</span>
+      <button class="sc" data-act="done" aria-label="подход сделан"></button></div>`);
+    const fw = D.warm ? { w: sg.w ?? 0, r: it.reps } : D;
+    for (let k = wn; k < it.sets; k++) rows.push(`<div class="set"><span class="sn">${k + 1}</span><span class="sv">${setText(fw, kind)}</span><span class="sc"></span></div>`);
     return `<section class="card glass cur">
       <div class="row"><button class="exh" data-act="info" data-ex="${esc(it.ex)}">${thumb(it.ex)}<b class="h2">${esc(it.ex)}</b></button>
         <span class="muted sm num">${work} из ${esc(it.sets)}</span></div>
       <p class="muted sm">План ${esc(it.sets)} × ${esc(it.reps)}, отдых до ♥ ${thrFor(i, n, db.settings)}</p>
-      <p class="hint">${esc(suggest(lastOf(it.ex), it, kind).text)}</p>
-      ${chips + ghost ? `<div class="chips">${chips}${ghost}</div>` : ''}
-      <div class="setline"><b>${D.warm ? 'Разминка' : work < it.sets ? `Подход ${work + 1} из ${esc(it.sets)}` : 'Ещё подход'}</b>
-        <small class="muted">Цифры по плану. Сделай подход, поправь, если вышло иначе, и запиши</small></div>
+      <p class="hint">${esc(sg.text)}</p>
+      <div class="sets">${rows.join('')}</div>
+      <p class="muted sm">${D.warm ? 'Сделай разминку' : 'Сделай подход'} и жми «Сделано». Вышло иначе: сначала поправь цифры</p>
       <div class="steps">${kind === 'bw' ? '' : stepper('w', D.w, UNIT[kind])}${stepper('r', D.r, 'повторов')}</div>
       <div class="row">
         <button class="toggle${D.warm ? ' on' : ''}" data-act="warm">Разминка</button>
-        <button class="btn primary grow done-btn" data-act="done">Записать подход</button>
+        <button class="btn primary grow done-btn" data-act="done">${ICON_OK} Сделано</button>
       </div>
       <button class="link swapl" data-act="swap" data-ctx="work" data-i="${i}">${ICON_SWAP} Заменить упражнение</button></section>`;
   }).join('');
-  return `<header class="hd"><p class="sub num" id="elapsed"></p><h1 class="t2">${esc(A.name)}</h1></header>
+  // Полоска всей тренировки: сколько рабочих подходов из плана уже позади
+  const plan = A.items.reduce((a, it) => a + it.sets, 0);
+  const got = A.items.reduce((a, it) => a + Math.min(it.sets, A.sets.filter(s => s.ex === it.ex && !s.warm).length), 0);
+  return `<header class="hd"><p class="sub num" id="elapsed"></p><h1 class="t2">${esc(A.name)}</h1>
+    <div class="bar" role="progressbar" aria-valuenow="${got}" aria-valuemax="${plan}"><i style="width:${plan ? (got / plan) * 100 : 0}%"></i></div></header>
     ${stale}${cards}
     <button class="btn wide" data-act="add" data-ctx="work">Добавить упражнение</button>
     <button class="btn ghost wide" data-act="finish">Закончить тренировку</button>
@@ -471,7 +481,8 @@ function restOverlay(A) {
     ? '<button class="btn primary xl" data-act="go">Начать подход</button><button class="link" data-act="finish">Закончить тренировку</button>'
     : '<button class="btn primary xl" data-act="finish">Закончить</button><button class="link" data-act="go">Ещё подход</button>';
   return `<div class="rest" role="dialog" aria-label="Отдых">
-    <p class="muted">Записал ${last ? setText(last, kindOf(last.ex)) : ''}${last?.warm ? ', разминка' : ''}
+    <h2 class="rest-h">Отдых</h2>
+    <p class="muted">Записано: ${last ? setText(last, kindOf(last.ex)) : ''}${last?.warm ? ', разминка' : ''}
       <button class="link inline" data-act="fix">Исправить</button></p>
     <div class="timer" id="timer" data-hint="${was ? Math.round(was) : ''}">0:00</div>
     <p class="thr-t"><span class="heart" aria-hidden="true">♥</span> подход, когда пульс ниже <b>${esc(R.thr)}</b></p>
@@ -519,21 +530,23 @@ function todayPage() {
     <p class="muted sm">Подключи сервер в Настройках, история придёт сама. Или загрузи файл history.json.</p>
     <div class="row"><button class="btn primary grow" data-act="tab" data-tab="settings">Подключить</button><button class="btn grow" data-act="imp">Файл</button></div></section>`;
   const items = db.plan.items;
-  const plan = `<section class="card glass">
-    <div class="row"><h2>Рекомендую</h2><button class="link" data-act="replan">Сбросить</button></div>
-    <p class="muted sm">${esc(planName(items))}</p>
+  // Кнопка «Приступить» прилипает к низу экрана: видна сразу, как бы длинно ни вышел план
+  const plan = `<section class="card glass plan">
+    <h2>Тренировка на сегодня</h2>
+    <p class="muted sm">${esc(planName(items))}. ${items.length} ${plural(items.length, 'упражнение', 'упражнения', 'упражнений')}</p>
     <div class="plist">${items.map(planRow).join('')}</div>
-    <button class="link accent" data-act="add" data-ctx="plan">Добавить упражнение</button>
-    <button class="btn primary wide" data-act="startplan"${items.length ? '' : ' disabled'}>Начать</button></section>`;
+    <p class="muted sm">Не хочешь упражнение: ${II(ICON_SWAP)} заменит на похожее, ${II(ICON_X)} уберёт</p>
+    <div class="row"><button class="link accent" data-act="add" data-ctx="plan">Добавить упражнение</button><button class="link" data-act="replan">Собрать заново</button></div>
+    <button class="btn primary wide go-btn" data-act="startplan"${items.length ? '' : ' disabled'}>Приступить</button></section>`;
   const progs = db.programs.map(p => `<button class="li" data-act="start" data-id="${esc(p.id)}">
-    <span><b>${esc(p.name)}</b><small class="muted">${esc(p.items.map(i => i.ex).join(', '))}</small></span><span class="accent sm">Начать</span></button>`).join('');
+    <span><b>${esc(p.name)}</b><small class="muted">${esc(p.items.map(i => i.ex).join(', '))}</small></span><span class="accent sm">Приступить</span></button>`).join('');
   const guide = db.settings.guideSeen ? '' : `<section class="card glass guide-card">
     <div class="row"><b class="h3">Как этим пользоваться</b><button class="ic" data-act="guideok" aria-label="скрыть">${ICON_X}</button></div>
     <p class="muted sm">Минута чтения: подход, отдых по пульсу, команда для пульса с часов.</p>
     <button class="btn primary wide" data-act="guide">Открыть гайд</button></section>`;
   return `<header class="hd"><p class="sub">${longDate(new Date())}</p><h1>Сегодня</h1></header>
     ${guide}${empty}${weekCard()}${plan}
-    <h4 class="cap">Мои программы</h4><div class="group glass">${progs}</div>`;
+    <h4 class="cap">Или по программе</h4><div class="group glass">${progs}</div>`;
 }
 
 // ---------- шторки: техника, замена, добавление, выбор данных ----------
@@ -1020,7 +1033,7 @@ const ACT = {
   replan: () => {
     const old = db.plan;
     db.plan = buildPlan();
-    toast('План сброшен', () => { db.plan = old; });
+    toast('Собрал заново', () => { db.plan = old; });
   },
   plandel: d => {
     const i = +d.i, items = db.plan.items, it = items.splice(i, 1)[0];
