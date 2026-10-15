@@ -421,10 +421,11 @@ function workoutPage() {
     const kind = kindOf(it.ex);
     const done = A.sets.map((s, k) => ({ ...s, k })).filter(s => s.ex === it.ex);
     const work = done.filter(s => !s.warm).length;
-    if (i !== A.cur) {
+    // Свёрнутые карточки: нажатие разворачивает. Текущую можно свернуть стрелкой, тогда она подсвечена в списке
+    if (i !== A.cur || view.fold) {
       const chips = done.map(s => `<span class="chip${s.warm ? ' warm' : ''}${s.pr ? ' pr' : ''}">${s.pr ? '★ ' : ''}${setText(s, kind)}</span>`).join('');
-      return `<section class="card glass mini${work >= it.sets ? ' done' : ''}" data-act="cur" data-i="${i}">
-        <div class="row"><span class="exh">${thumb(it.ex)}<h3>${esc(it.ex)}</h3></span><span class="muted sm num">${work} из ${esc(it.sets)}</span></div>
+      return `<section class="card glass mini${work >= it.sets ? ' done' : ''}${i === A.cur ? ' now' : ''}" data-act="cur" data-i="${i}">
+        <div class="row"><span class="exh">${thumb(it.ex)}<h3>${esc(it.ex)}</h3></span><span class="muted sm num">${work} из ${esc(it.sets)}<i class="chev">${ICON_UP}</i></span></div>
         ${chips ? `<div class="chips">${chips}</div>` : ''}</section>`;
     }
     const D = A.draft || (A.draft = draftFor(i));
@@ -435,7 +436,8 @@ function workoutPage() {
     const no = s => (s.warm ? 'Р' : ++wn);
     const rows = done.map(s => `<div class="set ok${s.warm ? ' warm' : ''}"><span class="sn">${no(s)}</span>
       <button class="sv${s.pr ? ' pr' : ''}" data-act="delset" data-k="${s.k}">${s.pr ? '★ ' : ''}${setText(s, kind)}</button><span class="sc">${ICON_OK}</span></div>`);
-    // Цифры спрятаны, пока всё по плану: новичка поля сбивают («настрой и начни»). Нажатие на строку их открывает
+    // Цифры спрятаны, пока всё по плану: новичка поля сбивают («настрой и начни»). Строка и ссылка под списком
+    // открывают и закрывают их на одном месте
     const ed = view.edit;
     rows.push(`<div class="set now${D.warm ? ' warm' : ''}"><span class="sn">${no(D)}</span><button class="sv" data-act="edit">${setText(D, kind)}</button>
       <button class="sc" data-act="done" aria-label="подход сделан"></button></div>`);
@@ -443,12 +445,12 @@ function workoutPage() {
     for (let k = wn; k < it.sets; k++) rows.push(`<div class="set"><span class="sn">${k + 1}</span><span class="sv">${setText(fw, kind)}</span><span class="sc"></span></div>`);
     return `<section class="card glass cur">
       <div class="row"><button class="exh" data-act="info" data-ex="${esc(it.ex)}">${thumb(it.ex)}<b class="h2">${esc(it.ex)}</b></button>
-        <span class="muted sm num">${work} из ${esc(it.sets)}</span></div>
+        <span class="row"><span class="muted sm num">${work} из ${esc(it.sets)}</span><button class="ic" data-act="fold" aria-label="свернуть">${ICON_UP}</button></span></div>
       <p class="muted sm">План ${esc(it.sets)} × ${esc(it.reps)}, отдых до ♥ ${thrFor(i, n, db.settings)}</p>
       <p class="hint">${esc(sg.text)}</p>
       <div class="sets">${rows.join('')}</div>
-      ${ed ? `<div class="steps">${kind === 'bw' ? '' : stepper('w', D.w, UNIT[kind])}${stepper('r', D.r, 'повторов')}</div>`
-        : '<button class="link accent" data-act="edit">Вышло иначе? Поправить цифры</button>'}
+      <button class="link accent edl${ed ? ' on' : ''}" data-act="edit">${ed ? 'Свернуть' : 'Вышло иначе? Поправить цифры'}${ICON_UP}</button>
+      ${ed ? `<div class="steps">${kind === 'bw' ? '' : stepper('w', D.w, UNIT[kind])}${stepper('r', D.r, 'повторов')}</div>` : ''}
       <p class="muted sm">${D.warm ? 'Сделай разминку' : 'Сделай подход'} и нажми «Сделано»</p>
       <div class="row">
         ${ed ? `<button class="toggle${D.warm ? ' on' : ''}" data-act="warm">Разминка</button>` : ''}
@@ -1022,6 +1024,7 @@ const ACT = {
       else if (replace) list[S.i] = it;
       else { list.push(it); a.cur = list.length - 1; }
       a.draft = draftFor(a.cur);
+      delete view.fold;
     } else if (replace) list[S.i] = it;
     else list.push(it);
     delete view.sheet;
@@ -1060,8 +1063,14 @@ const ACT = {
   startplan: () => startWith(planName(db.plan.items), null, db.plan.items),
   start: d => { const p = db.programs.find(x => x.id === d.id); startWith(p.name, p.id, p.items); view = { tab: 'today' }; },
   resume: () => { A().resumed = Date.now(); },
-  cur: d => { A().cur = +d.i; A().draft = draftFor(+d.i); delete view.edit; },
-  edit: () => { view.edit = true; },
+  // Своя же свёрнутая карточка разворачивается с теми же цифрами, другая становится текущей
+  cur: d => {
+    const a = A(), i = +d.i;
+    delete view.fold;
+    if (i !== a.cur) { a.cur = i; a.draft = draftFor(i); delete view.edit; }
+  },
+  fold: () => { view.fold = true; },
+  edit: () => { view.edit = !view.edit; },
   step: d => {
     const D = A().draft, inc = d.f === 'w' ? STEP[kindOf(curItem().ex)] : 1;
     D[d.f] = Math.max(0, Math.round((+D[d.f] + d.d * inc) * 100) / 100);
@@ -1090,6 +1099,7 @@ const ACT = {
   go: () => {
     const a = A();
     if (a.ready) return void delete a.ready;
+    delete view.fold;
     a.rests.push({ ...a.rest, end: Date.now() });
     a.rest = null;
     const ni = nextIdx(a);
