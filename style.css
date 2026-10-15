@@ -1,0 +1,366 @@
+:root {
+  color-scheme: dark;
+  --text: #f5f5f7;
+  --muted: rgba(235, 235, 245, 0.62);
+  --faint: rgba(235, 235, 245, 0.5);
+  --fill: rgba(255, 255, 255, 0.08);
+  --fill2: rgba(255, 255, 255, 0.14);
+  --stroke: rgba(255, 255, 255, 0.14);
+  --line: rgba(255, 255, 255, 0.08);
+  --accent: #0a84ff;
+  --accent-t: #64aaff;
+  --pulse: #ff375f;
+  --ok: #30d158;
+  --warn: #ff9f0a;
+  --r: 24px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html { background: #000; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body {
+  min-height: 100dvh;
+  padding: calc(env(safe-area-inset-top) + 8px) max(16px, env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 108px) max(16px, env(safe-area-inset-left));
+  color: var(--text);
+  font: 17px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+}
+img { -webkit-touch-callout: none; }
+button, input, select, textarea { touch-action: manipulation; }
+
+/* Цветное свечение под стеклом: стеклу нужно что-то размывать. На тренировке замирает: размытие не пересчитывается каждый кадр */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  z-index: -1;
+  background:
+    radial-gradient(40% 30% at 15% 15%, rgba(94, 92, 230, 0.55), transparent 70%),
+    radial-gradient(35% 30% at 90% 45%, rgba(255, 55, 95, 0.32), transparent 70%),
+    radial-gradient(45% 30% at 30% 90%, rgba(0, 199, 190, 0.28), transparent 70%);
+  animation: drift 40s ease-in-out infinite alternate;
+}
+body.working::before { animation-play-state: paused; }
+@keyframes drift {
+  to { transform: translate3d(4%, -3%, 0) rotate(8deg) scale(1.08); }
+}
+/* Подложка под статус-бар: при прокрутке текст не лезет под часы */
+.sb { position: fixed; z-index: 20; top: 0; left: 0; right: 0; height: env(safe-area-inset-top); background: rgba(0, 0, 0, 0.7); }
+
+main { max-width: 560px; margin: 0 auto; display: grid; gap: 14px; }
+/* Только сдвиг, без прозрачности: прозрачность у предка сбрасывает размытие карточек */
+main.enter { animation: enter 0.32s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes enter { from { transform: translateY(10px); } }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+@keyframes fade { from { opacity: 0; } }
+
+.glass {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.04));
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+/* Текст */
+.hd { padding: 14px 4px 2px; }
+h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+h1.t2 { font-size: 28px; }
+h2, .h2 { font-size: 21px; font-weight: 650; letter-spacing: -0.01em; }
+h3, .h3 { font-size: 17px; font-weight: 600; }
+.sub { color: var(--muted); font-size: 15px; margin-bottom: 2px; }
+.muted { color: var(--muted); }
+.sm { font-size: 14px; }
+.num, .chip, .stat b, .rt { font-variant-numeric: tabular-nums; }
+.nowrap { white-space: nowrap; }
+.hint { font-size: 15px; color: var(--accent-t); }
+.warn { color: var(--warn); }
+.ok { color: var(--ok); }
+.pulse { color: var(--pulse); }
+.accent { color: var(--accent-t); }
+.gold { color: #ffd60a; }
+
+/* Карточки и строки */
+.card { padding: 16px; display: grid; gap: 12px; }
+.card.mini { padding: 14px 16px; gap: 8px; cursor: pointer; }
+.card.mini.done h3 { color: var(--muted); }
+.card.mini.done .row > .num::before { content: "✓ "; color: var(--ok); }
+.card.cur {
+  border-color: rgba(10, 132, 255, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 0 0 1px rgba(10, 132, 255, 0.2), 0 12px 40px rgba(10, 132, 255, 0.2);
+}
+.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.row > .num { flex: none; white-space: nowrap; }
+
+.group { overflow: hidden; }
+.pad { padding: 14px 16px; display: grid; gap: 10px; }
+.li {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; min-height: 50px; padding: 12px 16px; text-align: left;
+}
+.li + .li, .li + .pi, .pi + .pi, .pi + .li { border-top: 1px solid var(--line); }
+.li > span:first-child { display: grid; gap: 2px; min-width: 0; }
+.li b { font-weight: 500; }
+.li small { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.li small.sets { white-space: normal; }
+.li .txt, .pl .txt { flex: 1; display: grid; gap: 2px; min-width: 0; text-align: left; }
+.li .txt b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cap { font-size: 13px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 10px 16px -6px; }
+.foot { font-size: 13px; color: var(--muted); padding: 0 16px; margin-top: -6px; }
+
+/* Кнопки. Зоны нажатия не меньше 44 px: телефон в потной руке */
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; border: 0; background: none; }
+button:disabled { opacity: 0.4; }
+.btn, .li, .chip, .card.mini, .toggle, .step button, .ic, .tabs button {
+  transition: transform 0.14s ease, opacity 0.14s ease, background-color 0.2s ease;
+}
+.btn:active, .li:active, .chip:active, .card.mini:active, .toggle:active, .step button:active, .ic:active { transform: scale(0.96); opacity: 0.8; }
+.btn { min-height: 48px; border-radius: 999px; padding: 13px 22px; font-weight: 600; background: var(--fill2); border: 1px solid var(--stroke); }
+.primary {
+  color: #fff;
+  background: linear-gradient(180deg, #3d9bff, #0a84ff);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 6px 20px rgba(10, 132, 255, 0.35);
+}
+.wide { width: 100%; }
+.grow { flex: 1; }
+.ghost { background: transparent; }
+.danger { color: #ff453a; }
+.link { min-height: 44px; padding: 10px; font-size: 15px; color: var(--muted); }
+.link.inline { min-height: 0; padding: 10px 6px; margin: -10px 0; color: var(--accent-t); }
+.link.accent { justify-self: start; padding: 10px 0; color: var(--accent-t); }
+.link svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.back { min-height: 44px; padding: 8px 0 0; justify-self: start; font-size: 17px; color: var(--accent-t); }
+.swapl { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; }
+
+.toggle { min-height: 56px; padding: 13px 16px; border-radius: 999px; border: 1px solid var(--stroke); color: var(--muted); font-weight: 600; }
+.toggle.on { background: rgba(255, 159, 10, 0.16); border-color: rgba(255, 159, 10, 0.5); color: var(--warn); }
+.done-btn { min-height: 56px; font-size: 19px; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { padding: 5px 12px; border-radius: 999px; background: var(--fill2); font-size: 15px; }
+/* Сделанная разминка сплошная и приглушённая, пунктир только у того, что ещё впереди */
+.chip.warm { background: var(--fill); color: var(--muted); }
+.chip.ghost { background: transparent; border: 1px dashed var(--muted); color: var(--muted); }
+.chip.pr { color: #ffd60a; box-shadow: inset 0 0 0 1px rgba(255, 214, 10, 0.6); }
+.chip.on { background: var(--accent); color: #fff; }
+
+/* Вес и повторы: друг под другом, крупно */
+.steps { display: grid; gap: 8px; }
+.step { display: flex; align-items: center; padding: 4px; border-radius: 18px; background: rgba(0, 0, 0, 0.28); border: 1px solid var(--stroke); }
+.step button { width: 64px; height: 56px; flex: none; font-size: 30px; color: var(--text); background: var(--fill); border-radius: 14px; }
+.step label { flex: 1; min-width: 0; display: grid; justify-items: center; }
+.step input {
+  width: 100%; text-align: center; background: none; border: 0; outline: none;
+  font-size: 34px; font-weight: 600; font-variant-numeric: tabular-nums;
+  -webkit-user-select: text; user-select: text;
+}
+.step small { font-size: 12px; color: var(--muted); margin-top: -4px; }
+
+/* Поля. Не мельче 16 px, иначе iPhone увеличивает экран при нажатии */
+input, select, textarea { -webkit-user-select: text; user-select: text; }
+#newex, textarea, select {
+  width: 100%; padding: 11px 14px; font-size: 17px; outline: none;
+  background: rgba(0, 0, 0, 0.28); border: 1px solid var(--stroke); border-radius: 14px;
+}
+.li select { width: auto; max-width: 55%; padding: 7px 10px; font-size: 16px; }
+.num-in { width: 56px; text-align: right; background: none; border: 0; outline: none; font-size: 17px; color: var(--accent-t); }
+details { display: grid; gap: 10px; }
+summary { cursor: pointer; padding: 10px 0; }
+textarea { margin: 8px 0; font-size: 16px; resize: vertical; }
+.search { width: 100%; padding: 11px 14px; font-size: 17px; outline: none; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--stroke); border-radius: 14px; }
+
+.title-in { width: 100%; padding: 0; background: none; border: 0; outline: none; font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
+.pi { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 12px 12px 16px; }
+.pi select { flex: 1 1 100%; min-width: 0; padding: 8px 10px; font-size: 16px; }
+.pi-n { display: flex; align-items: center; gap: 3px; margin-right: auto; color: var(--muted); }
+.pi-n input { width: 44px; padding: 9px 0; text-align: center; font-size: 16px; background: rgba(0, 0, 0, 0.28); border: 1px solid var(--stroke); border-radius: 10px; outline: none; }
+/* Кружок 34 px, а нажимается область 44 px */
+.ic { position: relative; width: 34px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 50%; color: var(--muted); background: var(--fill); }
+.ic::after { content: ""; position: absolute; inset: -5px; }
+.ic svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Прогресс */
+.seg { display: flex; padding: 3px; border-radius: 999px; }
+.seg button { flex: 1; padding: 12px 8px; border-radius: 999px; font-size: 15px; font-weight: 600; color: var(--muted); transition: background-color 0.25s ease, color 0.25s ease; }
+.seg button.on { background: var(--fill2); color: var(--text); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; }
+.stat { display: grid; gap: 2px; padding: 12px 14px; border-radius: 20px; }
+.stat small { font-size: 12px; color: var(--muted); }
+.stat b { font-size: 20px; font-weight: 650; }
+.card .stat { background: var(--fill); border-radius: 16px; }
+
+.chart { display: block; width: 100%; height: auto; overflow: visible; animation: reveal 1s ease-out; }
+@keyframes reveal { from { clip-path: inset(0 100% 0 0); } }
+.chart polyline { fill: none; stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; }
+.chart .l1 { stroke: var(--accent); }
+.chart .l2 { stroke: rgba(255, 255, 255, 0.5); stroke-width: 1.6; }
+.chart .hr { stroke: var(--pulse); stroke-width: 1.6; }
+.chart circle.l1 { fill: var(--accent); }
+.chart circle.l2 { fill: rgba(255, 255, 255, 0.6); }
+.chart circle.hr { fill: var(--pulse); }
+.chart .thr { stroke: var(--pulse); stroke-dasharray: 3 5; opacity: 0.6; }
+.chart .mark { stroke: rgba(255, 255, 255, 0.14); }
+.chart .grid { stroke: var(--line); }
+.chart text { fill: var(--faint); font-size: 10px; }
+.axis { display: flex; justify-content: space-between; padding-left: 30px; font-size: 12px; color: var(--faint); }
+.legend { display: flex; gap: 12px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 14px; height: 3px; margin-right: 5px; vertical-align: middle; border-radius: 2px; background: var(--accent); }
+.legend i.l2 { background: rgba(255, 255, 255, 0.5); }
+.spark { flex: none; width: 64px; height: 22px; }
+.spark polyline { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+
+.rt { width: 100%; border-collapse: collapse; font-size: 14px; }
+.rt th { padding: 0 0 4px; text-align: left; font-weight: 500; font-size: 12px; color: var(--faint); }
+.rt td { padding: 5px 0; border-top: 1px solid var(--line); }
+
+.recs { list-style: none; display: grid; gap: 8px; font-size: 15px; }
+.recs li { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; }
+.recs small { grid-column: 2; font-size: 13px; }
+
+/* Экран отдыха. Прокручивается, чтобы на маленьком iPhone «Иду» не уходила за край */
+.rest {
+  position: fixed; inset: 0; z-index: 30;
+  display: grid; align-content: center; justify-items: center; gap: 14px;
+  padding: calc(env(safe-area-inset-top) + 20px) 24px calc(env(safe-area-inset-bottom) + 24px);
+  overflow-y: auto; overscroll-behavior: contain;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.45);
+  -webkit-backdrop-filter: blur(36px) saturate(150%);
+  backdrop-filter: blur(36px) saturate(150%);
+  animation: fade 0.3s ease;
+}
+.timer { position: relative; font-size: 104px; font-weight: 200; line-height: 1; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; transition: color 0.6s ease; }
+.timer::before {
+  content: ""; position: absolute; inset: -55% -15%; z-index: -1; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 55, 95, 0.5), transparent);
+  animation: halo 2.2s ease-in-out infinite;
+}
+@keyframes halo { 50% { transform: scale(1.15); opacity: 0.55; } }
+.timer.ready { color: var(--ok); }
+.timer.ready::before { background: radial-gradient(closest-side, rgba(48, 209, 88, 0.45), transparent); }
+.thr-t { font-size: 20px; }
+.thr-t b { font-size: 34px; font-weight: 700; color: var(--pulse); }
+.heart { display: inline-block; color: var(--pulse); animation: beat 1.1s ease-in-out infinite; }
+@keyframes beat { 0%, 48%, 100% { transform: scale(1); } 12% { transform: scale(1.28); } 36% { transform: scale(1.14); } }
+.next { font-size: 17px; max-width: 340px; }
+.btn.xl { width: min(100%, 320px); margin-top: 8px; padding: 20px; font-size: 22px; }
+
+/* Меню-капсула. Прячется, пока открыта клавиатура: на iPhone она иначе прыгает над ней */
+.tabs {
+  position: fixed; z-index: 10; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 10px);
+  display: flex; gap: 2px; padding: 5px; border-radius: 999px;
+  transform: translateX(-50%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+body:has(:is(input, textarea, select):focus) .tabs { display: none; }
+.tabs button { display: grid; justify-items: center; gap: 1px; padding: 6px 18px; border-radius: 999px; font-size: 11px; font-weight: 500; color: var(--muted); }
+.tabs button.on { color: var(--text); background: rgba(255, 255, 255, 0.13); }
+.tabs svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+.toast {
+  position: fixed; z-index: 40; left: 16px; right: 16px; bottom: calc(env(safe-area-inset-bottom) + 88px);
+  max-width: 480px; margin: 0 auto; padding: 12px 16px; border-radius: 18px; font-size: 15px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  animation: rise 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.undo { flex: none; min-height: 44px; padding: 0 14px; margin: -10px -10px -10px 0; font-weight: 600; color: var(--accent-t); }
+
+#err {
+  position: fixed; z-index: 100; top: calc(env(safe-area-inset-top) + 8px); left: 12px; right: 12px;
+  padding: 12px 14px; border-radius: 14px; white-space: pre-wrap; font: 14px/1.35 -apple-system, system-ui, sans-serif;
+  color: #fff; background: rgba(160, 30, 40, 0.92);
+}
+
+/* Фото упражнений */
+.th { width: 44px; height: 44px; flex: none; border-radius: 12px; object-fit: cover; background: var(--fill); }
+img.th, .anim img:first-child { opacity: 0; transition: opacity 0.35s ease; }
+img.th.loaded, .anim img.loaded:first-child { opacity: 1; }
+.ph { display: grid; place-items: center; font-weight: 600; color: var(--muted); }
+.exh { display: flex; align-items: center; gap: 12px; min-width: 0; text-align: left; }
+.exh .th { width: 40px; height: 40px; }
+.card.mini .th { width: 34px; height: 34px; border-radius: 10px; }
+
+.anim { position: relative; aspect-ratio: 3 / 2; overflow: hidden; border-radius: 18px; background: #111; }
+.anim img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.anim img + img { animation: frame 2.6s ease-in-out infinite; }
+.anim.next { width: min(72vw, 280px); max-height: 24dvh; margin-top: 4px; }
+@keyframes frame { 0%, 35% { opacity: 0; } 50%, 85% { opacity: 1; } 100% { opacity: 0; } }
+.cues { display: grid; gap: 6px; padding-left: 20px; font-size: 15px; }
+.cues li::marker { color: var(--accent-t); }
+.media { gap: 14px; }
+
+/* Рекомендация. Названия в две строки: отличие часто в конце («на каждую» или «на обе») */
+.plist { display: grid; }
+.pl { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+.pl + .pl { border-top: 1px solid var(--line); }
+.pl .txt b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pl .txt small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Недельное кольцо */
+.card.week { display: flex; align-items: center; gap: 14px; }
+.ring { width: 58px; height: 58px; flex: none; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke: var(--fill2); stroke-width: 7; }
+.ring .fg { stroke: var(--pulse); stroke-linecap: round; animation: ring 1.1s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.ring.full .fg { filter: drop-shadow(0 0 6px rgba(255, 55, 95, 0.7)); }
+@keyframes ring { from { stroke-dasharray: 0 var(--c); } }
+.week .txt { flex: 1; display: grid; gap: 2px; }
+.week .txt b { font-size: 22px; font-weight: 650; }
+.streak { display: grid; justify-items: end; gap: 2px; text-align: right; }
+.streak b { font-size: 26px; font-weight: 700; color: var(--warn); }
+.streak.zero b { color: var(--faint); }
+.week small { font-size: 13px; }
+
+/* Шторка снизу, смахивается вниз */
+body.locked { overflow: hidden; }
+.sheet-bg { position: fixed; inset: 0; z-index: 35; background: rgba(0, 0, 0, 0.5); }
+#sheet .sheet {
+  position: fixed; z-index: 36; left: 0; right: 0; bottom: 0;
+  display: grid; gap: 12px; max-width: 560px; max-height: 88dvh; margin: 0 auto;
+  padding: 10px 16px calc(env(safe-area-inset-bottom) + 24px);
+  overflow-y: auto; overscroll-behavior: contain;
+  border-radius: 28px 28px 0 0;
+  background: linear-gradient(180deg, rgba(44, 44, 52, 0.85), rgba(18, 18, 24, 0.94));
+}
+#sheet.in .sheet { animation: up 0.38s cubic-bezier(0.2, 0.8, 0.2, 1); }
+#sheet.in .sheet-bg { animation: fade 0.3s ease; }
+@keyframes up { from { transform: translateY(100%); } }
+.grab { justify-self: center; width: 40px; height: 5px; border-radius: 3px; background: var(--faint); }
+.sheet .close { position: absolute; z-index: 2; top: 12px; right: 12px; background: rgba(0, 0, 0, 0.45); color: var(--text); }
+.sheet h2 { padding-right: 40px; }
+.gch { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 0 16px; }
+.gch::-webkit-scrollbar { display: none; }
+.gch .chip { padding: 9px 14px; white-space: nowrap; }
+
+/* Рекорд: плашка сверху, чтобы не закрывать порог пульса на экране отдыха */
+.confetti { position: fixed; inset: 0; z-index: 50; pointer-events: none; }
+.confetti i {
+  position: absolute; left: 50%; top: 22%; width: 8px; height: 13px; margin: -6px -4px;
+  border-radius: 2px; background: var(--c); opacity: 0;
+  animation: burst 1.7s cubic-bezier(0.15, 0.7, 0.3, 1) forwards;
+}
+@keyframes burst {
+  0% { transform: translate(0, 0) scale(0.3); opacity: 1; }
+  45% { transform: translate(var(--x), var(--y)) rotate(calc(var(--r) / 2)); opacity: 1; }
+  100% { transform: translate(var(--x), calc(var(--y) + 340px)) rotate(var(--r)); opacity: 0; }
+}
+.prb {
+  position: absolute; left: 50%; top: calc(env(safe-area-inset-top) + 64px); max-width: 86vw;
+  display: grid; justify-items: center; gap: 2px; padding: 16px 22px; border-radius: 22px; text-align: center;
+  transform: translate(-50%, -50%); animation: prb 2.8s cubic-bezier(0.3, 1.4, 0.5, 1) forwards;
+}
+.prb small { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #ffd60a; }
+.prb b { font-size: 17px; }
+@keyframes prb {
+  0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+  12% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before { animation: none !important; transition: none !important; }
+}
