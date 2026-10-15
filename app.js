@@ -10,6 +10,30 @@ const ICON_UP = '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>';
 const ICON_X = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const ICON_SWAP = '<svg viewBox="0 0 24 24"><path d="M5 8h13l-3.5-3.5M19 16H6l3.5 3.5"/></svg>';
 const CAT = Object.fromEntries(CATALOG.map(c => [c.name, c]));
+const II = icon => `<span class="ii">${icon}</span>`;
+
+// Мини-гайд: [заголовок, текст с разметкой]. Тексты для человека в зале: коротко, без терминов
+const GUIDE_USE = [
+  ['Сегодня', `Приложение само собирает тренировку из того, что ты давно не делал. Не хочешь упражнение: ${II(ICON_SWAP)} заменит на похожее, ${II(ICON_X)} уберёт. Потом «Начать».`],
+  ['Подход', 'В карточке уже стоят вес и повторы по плану. Сделай подход. Вышло иначе: поправь кнопками − и +. Потом «Записать подход». Разминку отметь кнопкой «Разминка».'],
+  ['Отдых', 'На часах запусти «Тренировка», «Силовая» и смотри на пульс. Упал ниже порога (110 в начале, 115 ближе к концу): жми «Начать подход». Таймер зеленеет, когда в прошлый раз уже было пора.'],
+  ['Ошибся', 'На экране отдыха «Исправить»: подход вернётся в поля. Или нажми на записанный подход в карточке: он удалится, а внизу будет «Вернуть».'],
+  ['Конец', '«Закончить»: итог, сколько поднял, рекорды. Тренировка сама сохранится в GitHub.'],
+  ['Пульс', 'Дома запусти команду «Трени пульс» и нажми «Вставить пульс» на экране итога. Приложение разберёт каждый отдых. Как собрать команду: вторая вкладка этого гайда.'],
+  ['Остальное', '«Упражнения»: все упражнения с фото и техникой. «Прогресс»: графики и прошлые тренировки. «Настройки»: пороги, цель, GitHub.'],
+];
+const GUIDE_HR = [
+  ['Открой «Команды»', 'Стандартное приложение iPhone. Внизу вкладка «Команды», сверху справа «+».'],
+  ['Назови', 'Нажми на название сверху и напиши «Трени пульс».'],
+  ['Найди пульс', '«Добавить действие», в поиске набери «здоровья», выбери «Найти образцы Здоровья». В нём: тип «Пульс».'],
+  ['Фильтр', 'Там же «Добавить фильтр»: «Дата начала», «за последние», «24 часа». Сортировка по «Дате начала», сначала старые. Ограничение выключи.'],
+  ['Повтор', 'Добавь действие «Повторить с каждым».'],
+  ['Строка', 'Внутрь повтора добавь «Текст». В него: переменная «Повторяемый объект», нажми на неё, выбери «Дата начала», формат «ISO 8601», включи время. Сразу после поставь точку с запятой «;» и снова «Повторяемый объект», на этот раз «Значение».'],
+  ['Склей', 'После «Конец повтора» добавь «Объединить текст»: «Результаты повтора», разделитель «Новая строка».'],
+  ['Копия', 'Добавь «Скопировать в буфер обмена», потом «Показать уведомление» с текстом «Пульс скопирован».'],
+  ['Готово', 'Нажми «Готово». При первом запуске разреши доступ к «Здоровью» для пульса.'],
+  ['Как пользоваться', 'Тренировка на часах закончилась: запусти команду (из «Команд», виджета или «Siri, Трени пульс»). Открой Трени, на итоге тренировки «Вставить пульс», в подсказке над кнопкой «Вставить».'],
+];
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
@@ -45,7 +69,7 @@ const fresh = () => ({
   sessions: [],
   active: null,
   plan: null,
-  settings: { thr1: 110, thr2: 115, weekGoal: 1, backupAt: 0 },
+  settings: { thr1: 110, thr2: 115, weekGoal: 1, backupAt: 0, guideSeen: 0 },
   programs: [
     P('A', 'День А', [['Румынская тяга', 3, 8], ['Подтягивания', 3, 8], ['Жим ногами (тележка)', 3, 12], ['Махи на плечи', 3, 12], ['Бицепс', 3, 8]]),
     P('B', 'День Б', [['Приседания', 3, 12], ['Жим наклонный Хаммер', 3, 8], ['Тяга Хаммер на каждую', 3, 12], ['Трицепс (блок)', 3, 8], ['Бицепс', 3, 8]]),
@@ -415,10 +439,12 @@ function workoutPage() {
       <p class="muted sm">План ${esc(it.sets)} × ${esc(it.reps)}, отдых до ♥ ${thrFor(i, n, db.settings)}</p>
       <p class="hint">${esc(suggest(lastOf(it.ex), it, kind).text)}</p>
       ${chips + ghost ? `<div class="chips">${chips}${ghost}</div>` : ''}
+      <div class="setline"><b>${D.warm ? 'Разминка' : work < it.sets ? `Подход ${work + 1} из ${esc(it.sets)}` : 'Ещё подход'}</b>
+        <small class="muted">Цифры по плану. Сделай подход, поправь, если вышло иначе, и запиши</small></div>
       <div class="steps">${kind === 'bw' ? '' : stepper('w', D.w, UNIT[kind])}${stepper('r', D.r, 'повторов')}</div>
       <div class="row">
         <button class="toggle${D.warm ? ' on' : ''}" data-act="warm">Разминка</button>
-        <button class="btn primary grow done-btn" data-act="done">Сделал</button>
+        <button class="btn primary grow done-btn" data-act="done">Записать подход</button>
       </div>
       <button class="link swapl" data-act="swap" data-ctx="work" data-i="${i}">${ICON_SWAP} Заменить упражнение</button></section>`;
   }).join('');
@@ -444,13 +470,13 @@ function restOverlay(A) {
   const c = left && ni !== A.cur && CAT[it.ex];
   const media = c ? `<div class="anim next"><img src="img/${c.img}-0.jpg" alt=""><img src="img/${c.img}-1.jpg" alt=""></div>` : '';
   const buttons = left
-    ? '<button class="btn primary xl" data-act="go">Иду</button><button class="link" data-act="finish">Закончить тренировку</button>'
+    ? '<button class="btn primary xl" data-act="go">Начать подход</button><button class="link" data-act="finish">Закончить тренировку</button>'
     : '<button class="btn primary xl" data-act="finish">Закончить</button><button class="link" data-act="go">Ещё подход</button>';
   return `<div class="rest" role="dialog" aria-label="Отдых">
     <p class="muted">Записал ${last ? setText(last, kindOf(last.ex)) : ''}${last?.warm ? ', разминка' : ''}
       <button class="link inline" data-act="fix">Исправить</button></p>
     <div class="timer" id="timer" data-hint="${was ? Math.round(was) : ''}">0:00</div>
-    <p class="thr-t"><span class="heart" aria-hidden="true">♥</span> иди, когда пульс ниже <b>${esc(R.thr)}</b></p>
+    <p class="thr-t"><span class="heart" aria-hidden="true">♥</span> подход, когда пульс ниже <b>${esc(R.thr)}</b></p>
     ${was ? `<p class="muted sm" id="ready-no">В прошлый раз пульс падал до порога в среднем за ${fmtSec(was)}</p>
       <p class="sm ok" id="ready" hidden>Обычно к этому времени пульс уже ниже ${esc(R.thr)}. Глянь на часы</p>` : ''}
     ${media}<p class="next">${next}</p>
@@ -503,8 +529,12 @@ function todayPage() {
     <button class="btn primary wide" data-act="startplan"${items.length ? '' : ' disabled'}>Начать</button></section>`;
   const progs = db.programs.map(p => `<button class="li" data-act="start" data-id="${esc(p.id)}">
     <span><b>${esc(p.name)}</b><small class="muted">${esc(p.items.map(i => i.ex).join(', '))}</small></span><span class="accent sm">Начать</span></button>`).join('');
+  const guide = db.settings.guideSeen ? '' : `<section class="card glass guide-card">
+    <div class="row"><b class="h3">Как этим пользоваться</b><button class="ic" data-act="guideok" aria-label="скрыть">${ICON_X}</button></div>
+    <p class="muted sm">Минута чтения: подход, отдых по пульсу, команда для пульса с часов.</p>
+    <button class="btn primary wide" data-act="guide">Открыть гайд</button></section>`;
   return `<header class="hd"><p class="sub">${longDate(new Date())}</p><h1>Сегодня</h1></header>
-    ${empty}${weekCard()}${plan}
+    ${guide}${empty}${weekCard()}${plan}
     <h4 class="cap">Мои программы</h4><div class="group glass">${progs}</div>`;
 }
 
@@ -516,14 +546,46 @@ function infoSheet(S) {
   const sub = [GROUPS[groupOf(ex)], ...(c?.muscles || [])].filter(Boolean).join(', ');
   return `${media}<h2>${esc(ex)}</h2><p class="sub">${esc(sub)}</p>
     ${c ? `<ul class="cues">${c.cues.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+    ${addToButton(ex)}
     ${h.length ? `<button class="btn wide" data-act="ex" data-ex="${esc(ex)}">История упражнения</button>` : ''}`;
 }
 
-const pickRow = ex => {
+// Из каталога сразу в дело: в идущую тренировку или в план на сегодня
+function addToButton(ex) {
+  const list = db.active ? db.active.items : db.plan?.items;
+  if (!list) return '';
+  const [here, to] = db.active ? ['в тренировке', 'в тренировку'] : ['в плане на сегодня', 'в план на сегодня'];
+  return list.some(i => i.ex === ex) ? `<p class="muted sm">Уже ${here}</p>`
+    : `<button class="btn primary wide" data-act="addto" data-ex="${esc(ex)}">Добавить ${to}</button>`;
+}
+
+const pickRow = (ex, act = 'pick') => {
   const h = lastOf(ex);
   const sub = h ? `${h.session.label}: ${fmtSet(h)}` : (CAT[ex]?.muscles || []).join(', ');
-  return `<button class="li" data-act="pick" data-ex="${esc(ex)}">${thumb(ex)}<span class="txt"><b>${esc(ex)}</b><small class="muted">${esc(sub)}</small></span></button>`;
+  return `<button class="li" data-act="${act}" data-ex="${esc(ex)}">${thumb(ex)}<span class="txt"><b>${esc(ex)}</b><small class="muted">${esc(sub)}</small></span></button>`;
 };
+
+// ---------- каталог: все упражнения, а не только сделанные ----------
+
+function libList(S) {
+  const q = (S.q || '').trim().toLowerCase();
+  const names = allExercises().filter(x => (!S.g || groupOf(x) === S.g) && (!q || x.toLowerCase().includes(q)));
+  if (!names.length) return '<p class="muted pad">Ничего не нашлось. Своё упражнение заводится в Настройках</p>';
+  const block = (title, xs) => (xs.length ? `${title ? `<h4 class="cap">${esc(title)}</h4>` : ''}<div class="group glass">${xs.map(x => pickRow(x, 'info')).join('')}</div>` : '');
+  if (q || S.g) return block('', names);
+  return Object.entries(GROUPS).map(([g, title]) => block(title, names.filter(x => groupOf(x) === g))).join('')
+    + block('Свои', names.filter(x => !GROUPS[groupOf(x)]));
+}
+
+function libraryPage() {
+  const S = (view.lib ||= {});
+  const chips = [['', 'Все'], ...Object.entries(GROUPS)]
+    .map(([k, v]) => `<button class="chip${(S.g || '') === k ? ' on' : ''}" data-act="lgrp" data-g="${k}">${v}</button>`).join('');
+  return `<header class="hd"><h1>Упражнения</h1><p class="sub">${CATALOG.length} с фото и техникой. Нажми, чтобы посмотреть, как делать</p></header>
+    <input class="search" data-lq placeholder="Поиск" value="${esc(S.q || '')}" autocomplete="off">
+    <div class="chips gch">${chips}</div>
+    <div class="lib" id="llist">${libList(S)}</div>`;
+}
 
 // Сначала то, что уже делал (свежее выше), потом остальное из каталога
 function sortPick(list) {
@@ -542,8 +604,8 @@ function swapSheet(S) {
   const same = sortPick(all.filter(x => muscleOf(x) === muscleOf(ex)));
   const other = sortPick(all.filter(x => muscleOf(x) !== muscleOf(ex)));
   return `<h2>Заменить</h2><p class="sub">${esc(ex)}</p>
-    ${same.length ? `<h4 class="cap">Те же мышцы</h4><div class="group glass">${same.map(pickRow).join('')}</div>` : ''}
-    ${other.length ? `<h4 class="cap">${esc(GROUPS[groupOf(ex)] || 'Ещё')}</h4><div class="group glass">${other.map(pickRow).join('')}</div>` : ''}
+    ${same.length ? `<h4 class="cap">Те же мышцы</h4><div class="group glass">${same.map(x => pickRow(x)).join('')}</div>` : ''}
+    ${other.length ? `<h4 class="cap">${esc(GROUPS[groupOf(ex)] || 'Ещё')}</h4><div class="group glass">${other.map(x => pickRow(x)).join('')}</div>` : ''}
     <button class="btn wide" data-act="add" data-ctx="${S.ctx}" data-i="${S.i}" data-swap="1">Другое упражнение</button>`;
 }
 
@@ -551,7 +613,7 @@ const addList = S => {
   const q = (S.q || '').trim();
   const list = sortPick(allExercises().filter(notInList(S))
     .filter(x => (!S.g || groupOf(x) === S.g) && (!q || x.toLowerCase().includes(q.toLowerCase()))));
-  if (list.length) return list.map(pickRow).join('');
+  if (list.length) return list.map(x => pickRow(x)).join('');
   return q ? `<button class="li accent" data-act="newq">Добавить своё: «${esc(q)}»</button>` : '<p class="muted pad">Ничего не нашлось</p>';
 };
 
@@ -562,6 +624,19 @@ function addSheet(S) {
     <input class="search" data-q placeholder="Поиск" value="${esc(S.q || '')}" autocomplete="off">
     <div class="chips gch">${chips}</div>
     <div class="group glass" id="plist">${addList(S)}</div>`;
+}
+
+function guideSheet(S) {
+  const steps = S.part === 'hr' ? GUIDE_HR : GUIDE_USE;
+  const note = S.part === 'hr'
+    ? '<p class="muted sm">Собирается один раз. Названия в «Командах» могут чуть отличаться: ищи по смыслу. Застрял: пришли скриншот.</p>'
+    : '';
+  return `<h2>Как пользоваться</h2>
+    <div class="seg glass">
+      <button class="${S.part === 'hr' ? '' : 'on'}" data-act="gpart" data-v="use">Тренировка</button>
+      <button class="${S.part === 'hr' ? 'on' : ''}" data-act="gpart" data-v="hr">Команда для пульса</button></div>
+    ${note}<ol class="guide">${steps.map(([t, x]) => `<li><b>${esc(t)}</b><span>${x}</span></li>`).join('')}</ol>
+    <button class="btn primary wide" data-act="close">Понятно</button>`;
 }
 
 function conflictSheet() {
@@ -576,7 +651,7 @@ function conflictSheet() {
 function sheet() {
   const S = view.sheet;
   if (!S) return '';
-  const body = { info: infoSheet, swap: swapSheet, add: addSheet, conflict: conflictSheet }[S.t](S);
+  const body = { info: infoSheet, swap: swapSheet, add: addSheet, conflict: conflictSheet, guide: guideSheet }[S.t](S);
   return `<div class="sheet-bg" data-act="close"></div>
     <div class="sheet glass" role="dialog"><div class="grab"></div><button class="close ic" data-act="close" aria-label="закрыть">${ICON_X}</button>${body}</div>`;
 }
@@ -718,8 +793,9 @@ function sessionPage() {
       ${chart({ series: [{ cls: 'hr', pts: s.hr.s }], thr, marks: s.sets.filter(x => x.t).map(x => (x.t - s.hr.t0) / 1000), axis: ['0 мин', `${Math.round(end / 60)} мин`] })}
       <p class="muted sm">Вертикальные линии: подходы. Пунктир: порог.</p></section>`;
   } else if (s.rests?.length) {
-    pulse = `<section class="card glass"><p class="muted sm">Пульса пока нет. Запусти Быструю команду «Трени: пульс» и нажми кнопку.</p>
-      <button class="btn primary wide" data-act="paste">Вставить пульс</button></section>`;
+    pulse = `<section class="card glass"><p class="muted sm">Пульса пока нет. Запусти команду «Трени пульс» и нажми кнопку.</p>
+      <button class="btn primary wide" data-act="paste">Вставить пульс</button>
+      <button class="link accent" data-act="guide" data-part="hr">Как собрать команду</button></section>`;
   }
   const blocks = exs.map(ex => {
     const kind = kindOf(ex);
@@ -757,6 +833,7 @@ function settingsPage() {
   const progs = db.programs.map(p => `<button class="li" data-act="prog" data-id="${esc(p.id)}">
     <span><b>${esc(p.name)}</b><small class="muted">${p.items.length} ${plural(p.items.length, 'упражнение', 'упражнения', 'упражнений')}</small></span><span class="muted">›</span></button>`).join('');
   return `<header class="hd"><h1>Настройки</h1></header>
+    <div class="group glass"><button class="li" data-act="guide"><span>Как пользоваться</span><span class="muted">›</span></button></div>
     <h4 class="cap">Порог пульса для отдыха</h4>
     <div class="group glass">
       <label class="li"><span>В начале тренировки</span><span><input class="num-in" data-set="thr1" inputmode="numeric" value="${esc(S.thr1)}"> уд/мин</span></label>
@@ -769,8 +846,9 @@ function settingsPage() {
     </div>
     <h4 class="cap">Пульс с часов</h4>
     <div class="group glass pad">
-      <p class="muted sm">После тренировки запусти Быструю команду «Трени: пульс». Она скопирует замеры, потом нажми кнопку.</p>
+      <p class="muted sm">После тренировки запусти команду «Трени пульс». Она скопирует замеры, потом нажми кнопку.</p>
       <button class="btn primary wide" data-act="paste">Вставить пульс</button>
+      <button class="link accent" data-act="guide" data-part="hr">Как собрать команду</button>
       <details><summary class="muted sm">Вставить текстом</summary>
         <textarea id="hrtext" rows="4" placeholder="2026-10-15T19:00:05+05:00;142"></textarea>
         <button class="btn wide" data-act="parsehr">Разобрать</button></details>
@@ -881,7 +959,15 @@ const A = () => db.active;
 const curItem = () => A().items[A().cur];
 
 const ACT = {
-  tab: d => { closeSheet(); view = { tab: d.tab, seg: view.seg }; },
+  tab: d => { closeSheet(); view = { tab: d.tab, seg: view.seg, lib: view.lib }; },
+  lgrp: d => { view.lib.g = d.g; },
+  addto: d => {
+    if (!db.active) ensurePlan();
+    const where = db.active ? 'в тренировке' : 'в плане на сегодня';
+    view.sheet = { t: 'add', ctx: db.active ? 'work' : 'plan' };
+    ACT.pick(d);
+    toast(`${d.ex}: ${where}`);
+  },
   back: () => { for (const k of ['sid', 'ex', 'prog', 'exl']) if (view[k]) return void delete view[k]; },
   seg: d => { view.seg = d.v; },
   ex: d => { view = { tab: 'progress', seg: view.seg, ex: d.ex }; },
@@ -890,6 +976,9 @@ const ACT = {
   exl: () => { view.exl = true; },
 
   info: d => { view.sheet = { t: 'info', ex: d.ex }; },
+  guide: d => { view.sheet = { t: 'guide', part: d.part || 'use' }; db.settings.guideSeen ||= Date.now(); },
+  gpart: d => { view.sheet.part = d.v; },
+  guideok: () => { db.settings.guideSeen = Date.now(); },
   swap: d => { view.sheet = { t: 'swap', ctx: d.ctx, i: +d.i }; },
   add: d => { view.sheet = { t: 'add', ctx: d.ctx, i: +d.i, swap: !!d.swap }; },
   grp: d => { view.sheet.g = d.g; },
@@ -1080,6 +1169,11 @@ document.addEventListener('input', e => {
     $('#plist').innerHTML = addList(view.sheet);
     return;
   }
+  if ('lq' in t.dataset) {
+    view.lib.q = t.value;
+    $('#llist').innerHTML = libList(view.lib);
+    return;
+  }
   const f = t.dataset.in;
   if (!f || !db.active?.draft) return;
   const v = parseFloat(t.value.replace(',', '.'));
@@ -1133,6 +1227,7 @@ document.addEventListener('touchend', e => {
 function render() {
   const pages = {
     today: () => (db.active ? workoutPage() : todayPage()),
+    lib: libraryPage,
     progress: () => (view.sid ? sessionPage() : view.ex ? exercisePage() : progressPage()),
     settings: () => (view.prog ? programPage() : view.exl ? exercisesPage() : settingsPage()),
   };

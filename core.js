@@ -53,13 +53,20 @@ export function suggest(last, item, kind) {
 // Порог пульса: первая половина упражнений тренировки thr1, вторая thr2
 export const thrFor = (i, n, st) => (i < Math.ceil(n / 2) ? st.thr1 : st.thr2);
 
-// Текст из Быстрой команды: строки «дата ISO;уд/мин»
+// Дата из команды: ISO 8601, как в гайде, или «15.10.2026, 19:00:05», если там выбрали короткий формат.
+// Русский формат первым: Chrome читает «05.10.2026» как 10 мая
+function parseDate(s) {
+  const m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})\D+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  return m ? new Date(+m[3], m[2] - 1, +m[1], +m[4], +m[5], +(m[6] || 0)).getTime() : Date.parse(s);
+}
+
+// Текст из Быстрой команды: строки «дата;уд/мин»
 export function parseHR(text) {
   const out = [];
   for (const line of String(text || '').split(/\r?\n/)) {
     const m = line.match(/^\s*(.+?)\s*[;\t]\s*(\d{2,3})(?:[.,]\d+)?/);
     if (!m) continue;
-    const t = Date.parse(m[1].trim());
+    const t = parseDate(m[1].trim());
     if (!isNaN(t)) out.push({ t, bpm: +m[2] });
   }
   return out.sort((a, b) => a.t - b.t);

@@ -6,5 +6,8 @@ function showError(msg) {
   el.textContent = `Ошибка: ${msg}. Закрой приложение полностью и открой снова.`;
 }
 document.querySelector('script[type=module]').addEventListener('error', () => showError('не загрузился код приложения'));
-addEventListener('error', e => showError(e.message || 'неизвестная'));
-addEventListener('unhandledrejection', e => showError(e.reason?.message || String(e.reason)));
+// Только ошибки наших файлов. «Script error.» без файла бросают чужие скрипты: меню «Поделиться» Safari,
+// добавление на экран «Домой», расширения. Приложению они не мешают, пугать ими не надо
+const ours = s => String(s || '').startsWith(location.origin);
+addEventListener('error', e => { if (ours(e.filename)) showError(e.message || 'неизвестная'); });
+addEventListener('unhandledrejection', e => { if (ours(e.reason?.stack?.match(/https?:\/\/\S+/)?.[0])) showError(e.reason.message); });
