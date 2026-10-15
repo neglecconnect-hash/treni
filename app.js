@@ -129,6 +129,7 @@ let db = load();
 let view = { tab: 'today' };
 let lock = null;
 let lastPage = '';
+const scrollAt = {};
 let lastCur = null;
 navigator.storage?.persist?.().catch(() => {});
 
@@ -918,7 +919,8 @@ function exercisesPage() {
     <h4 class="cap">Своё упражнение</h4>
     <div class="group glass pad"><input id="newex" placeholder="Название"><select id="newgroup">${groups}</select><select id="newkind">${kindOpts('total')}</select>
       <button class="btn primary wide" data-act="newex">Добавить</button></div>
-    <p class="foot">В каталоге ${CATALOG.length} упражнений с фото, их заводить не надо.</p>`;
+    <p class="foot">В каталоге ${CATALOG.length} упражнений с фото, их заводить не надо.</p>
+    <button class="btn wide" data-act="back">Готово</button>`;
 }
 
 function programPage() {
@@ -933,6 +935,7 @@ function programPage() {
   return `${back()}<header class="hd"><input class="title-in" data-prog="name" value="${esc(p.name)}" aria-label="название"></header>
     <div class="group glass">${rows}<button class="li accent" data-act="add" data-ctx="prog">Добавить упражнение</button></div>
     <p class="foot">Порядок важен: в первой половине списка порог ${esc(db.settings.thr1)}, во второй ${esc(db.settings.thr2)}.</p>
+    <button class="btn primary wide" data-act="back">Готово</button>
     <button class="btn ghost wide danger" data-act="delprog">Удалить программу</button>`;
 }
 
@@ -1265,6 +1268,18 @@ document.addEventListener('touchend', e => {
   swipeY = null;
 });
 
+// Свайп от левого края вправо = «Назад», как в iOS: приложение с экрана «Домой» этого жеста от системы не получает
+let edge = null;
+document.addEventListener('touchstart', e => {
+  const p = e.touches[0];
+  edge = p.clientX < 28 && !view.sheet && $('.back') ? [p.clientX, p.clientY] : null;
+}, { passive: true });
+document.addEventListener('touchend', e => {
+  const p = e.changedTouches[0];
+  if (edge && p.clientX - edge[0] > 70 && Math.abs(p.clientY - edge[1]) < 60) { ACT.back(); render(); }
+  edge = null;
+});
+
 // ---------- отрисовка ----------
 
 function render() {
@@ -1275,9 +1290,11 @@ function render() {
     settings: () => (view.prog ? programPage() : view.exl ? exercisesPage() : settingsPage()),
   };
   const app = $('#app'), page = [view.tab, !!db.active, view.sid, view.ex, view.prog, view.exl, view.seg].join();
-  app.innerHTML = pages[view.tab]();
   const changed = page !== lastPage;
-  if (changed) { app.classList.remove('enter'); void app.offsetWidth; app.classList.add('enter'); lastPage = page; }
+  // Как в iOS: новый экран сверху, «Назад» туда, где был. Прокрутку запоминаем до подмены: короткий экран её обрежет
+  if (changed) scrollAt[lastPage] = scrollY;
+  app.innerHTML = pages[view.tab]();
+  if (changed) { app.classList.remove('enter'); void app.offsetWidth; app.classList.add('enter'); lastPage = page; scrollTo(0, scrollAt[page] || 0); }
   const sh = $('#sheet'), html = sheet(), opened = !sh.innerHTML && html;
   sh.innerHTML = html;
   sh.classList.toggle('in', !!opened);
