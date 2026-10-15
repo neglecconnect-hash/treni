@@ -1,7 +1,8 @@
 // Чистая логика без DOM: подключается и приложением, и tools/check.mjs.
 
-// Шаг прибавки по типу веса: total/side штанга и Хаммер, db гантели, added пояс, stack плитки, bw свой вес
-export const STEP = { total: 2.5, side: 2.5, added: 2.5, db: 1, stack: 1, bw: 1, '?': 2.5 };
+// Шаг прибавки по типу веса: total/side штанга и Хаммер, db гантели, added пояс, stack плитки, bw свой вес.
+// time (планка): w нет, r секунды, шаг 5 с. cardio (дорожка и т.п.): w километры, шаг 0,1; r минуты
+export const STEP = { total: 2.5, side: 2.5, added: 2.5, db: 1, stack: 1, bw: 1, time: 5, cardio: 0.1, '?': 2.5 };
 
 export const fmtW = w => (w == null ? '?' : String(Math.round(w * 100) / 100).replace('.', ','));
 export const fmtSec = sec => {
@@ -35,15 +36,19 @@ export function exerciseHistory(sessions, ex) {
   return out;
 }
 
-export const fmtSet = x => `${x.top ? fmtW(x.top) : 'свой вес'} × ${x.reps.map(r => r ?? '?').join('/')}`;
+export const fmtSet = (x, kind) => (kind === 'time' ? x.reps.map(r => (r == null ? '?' : fmtSec(r))).join('/')
+  : kind === 'cardio' ? `${x.reps[0] ?? '?'} мин${x.top ? `, ${fmtW(x.top)} км` : ''}`
+  : `${x.top ? fmtW(x.top) : 'свой вес'} × ${x.reps.map(r => r ?? '?').join('/')}`);
 
 // Двойная прогрессия: все подходы с самым тяжёлым весом на целевые повторы, значит прибавляем шаг.
 // Сколько их было, не важно: «лесенка» 40/50/40 даёт один подход на 50, и это норма.
 export function suggest(last, item, kind) {
-  if (!last) return { w: null, text: 'Первый раз: подбери рабочий вес' };
-  const was = `Прошлый раз ${fmtSet(last)}.`;
+  if (!last) return { w: null, text: kind === 'time' ? 'Первый раз: держи, сколько получится' : kind === 'cardio' ? 'Первый раз: в своём темпе' : 'Первый раз: подбери рабочий вес' };
+  const was = `Прошлый раз ${fmtSet(last, kind)}.`;
+  if (kind === 'cardio') return { w: last.top, text: was };
   const done = last.reps.length > 0 && last.reps.every(r => r != null && r >= item.reps);
-  if (!done) return { w: last.top, text: `${was} Добей ${item.sets} × ${item.reps}` };
+  if (!done) return { w: last.top, text: `${was} Добей ${item.sets} × ${kind === 'time' ? `${item.reps} сек` : item.reps}` };
+  if (kind === 'time') return { w: 0, text: `${was} Попробуй +5 секунд` };
   if (kind === 'bw') return { w: last.top, text: `${was} Попробуй +1 повтор` };
   if (kind === 'stack') return { w: last.top, text: `${was} Пора на следующую плитку` };
   const w = last.top + (STEP[kind] ?? 2.5);

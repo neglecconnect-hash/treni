@@ -4,8 +4,13 @@ import { GROUPS, CATALOG } from './catalog.js';
 
 const KEY = 'treni';
 const IMG_CACHE = 'treni-img'; // так же в sw.js
-const KINDS = { total: 'общий вес', side: 'блины на сторону', added: 'доп. вес на поясе', db: 'гантели', stack: 'вес на стеке', bw: 'свой вес', '?': 'не уточнено' };
-const UNIT = { total: 'кг', side: 'кг на сторону', added: 'кг доп.', db: 'кг', stack: 'кг', bw: '', '?': 'кг' };
+const KINDS = { total: 'общий вес', side: 'блины на сторону', added: 'доп. вес на поясе', db: 'гантели', stack: 'вес на стеке', bw: 'свой вес', time: 'на время', cardio: 'кардио', '?': 'не уточнено' };
+const UNIT = { total: 'кг', side: 'кг на сторону', added: 'кг доп.', db: 'кг', stack: 'кг', bw: '', time: '', cardio: 'км', '?': 'кг' };
+// Второе число подхода: повторы, у планки секунды, у кардио минуты
+const RUNIT = { time: 'сек', cardio: 'мин' };
+const noW = kind => kind === 'bw' || kind === 'time'; // поля веса нет
+const rStep = kind => (kind === 'time' ? STEP.time : 1);
+const isWeight = kind => !noW(kind) && kind !== 'cardio'; // настоящий вес: тоннаж, «Максимум на раз», «подбери вес»
 const ICON_UP = '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>';
 const ICON_X = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const ICON_SWAP = '<svg viewBox="0 0 24 24"><path d="M5 8h13l-3.5-3.5M19 16H6l3.5 3.5"/></svg>';
@@ -59,8 +64,11 @@ const allExercises = () => [...new Set([...CATALOG.map(c => c.name), ...Object.k
   .sort((a, b) => a.localeCompare(b, 'ru'));
 // Подтягивания без отягощения и «свой вес» показываем одними повторами
 // Для новичка словами: «52,5 кг, 12 раз»
-const setLong = (x, kind) => esc(kind === 'bw' || (kind === 'added' && !x.w) ? `${x.r ?? '?'} раз` : `${x.w == null ? '?' : fmtW(x.w)} ${UNIT[kind] || 'кг'}, ${x.r ?? '?'} раз`);
-const setText = (x, kind) => esc(kind === 'bw' || (kind === 'added' && !x.w) ? `${x.r ?? '?'}` : `${x.w == null ? '?' : fmtW(x.w)} × ${x.r ?? '?'}`);
+const cardioText = x => `${x.r ?? '?'} мин${x.w ? `, ${fmtW(x.w)} км` : ''}`;
+const setLong = (x, kind) => esc(kind === 'time' ? `${x.r ?? '?'} сек` : kind === 'cardio' ? cardioText(x)
+  : kind === 'bw' || (kind === 'added' && !x.w) ? `${x.r ?? '?'} раз` : `${x.w == null ? '?' : fmtW(x.w)} ${UNIT[kind] || 'кг'}, ${x.r ?? '?'} раз`);
+const setText = (x, kind) => esc(kind === 'time' ? (x.r == null ? '?' : fmtSec(x.r)) : kind === 'cardio' ? cardioText(x)
+  : kind === 'bw' || (kind === 'added' && !x.w) ? `${x.r ?? '?'}` : `${x.w == null ? '?' : fmtW(x.w)} × ${x.r ?? '?'}`);
 const thumb = ex => (CAT[ex] ? `<img class="th" src="img/${CAT[ex].img}-0.jpg" alt="" loading="lazy">` : `<span class="th ph">${esc(ex[0])}</span>`);
 
 const P = (id, name, items) => ({ id, name, items: items.map(([ex, sets, reps]) => ({ ex, sets, reps })) });
@@ -308,11 +316,12 @@ function bestOf(ex, sessions) {
 
 // Первый раз в жизни не рекорд: сравнивать не с чем
 const recordOf = (x, best) => (best.w < 0 || x.w == null || !(x.r > 0) ? null : x.w > best.w ? 'вес' : x.w === best.w && x.r > best.r ? 'повторы' : null);
-const recordText = what => (what === 'вес' ? 'рекорд по весу' : 'рекорд по повторам');
+const recordText = (what, kind) => (what === 'вес' ? 'рекорд по весу' : kind === 'time' ? 'рекорд по времени' : 'рекорд по повторам');
 
 // Рекорд только относительно прошлых тренировок: первая тренировка упражнения и подходы без повторов не считаются.
-// prev: подходы этой тренировки до него
-const prOf = (set, prev) => !set.warm && bestOf(set.ex, db.sessions).w >= 0 && recordOf(set, bestOf(set.ex, [...db.sessions, { sets: prev }]));
+// prev: подходы этой тренировки до него. У кардио рекордов нет: минуты и км зависят от темпа, а не от силы
+const prOf = (set, prev) => !set.warm && kindOf(set.ex) !== 'cardio' && bestOf(set.ex, db.sessions).w >= 0
+  && recordOf(set, bestOf(set.ex, [...db.sessions, { sets: prev }]));
 
 // Цифры последнего подхода поправили на отдыхе: пересчитать его рекорд и черновик следующего
 function relast(a) {
@@ -324,6 +333,7 @@ function relast(a) {
 function sessionRecords(k) {
   const s = db.sessions[k], before = db.sessions.slice(0, k), out = [];
   for (const ex of new Set(s.sets.map(x => x.ex))) {
+    if (kindOf(ex) === 'cardio') continue;
     const top = bestOf(ex, [s]), what = recordOf(top, bestOf(ex, before));
     if (what) out.push({ ex, top, what });
   }
@@ -371,6 +381,9 @@ function buildPlan() {
   const count = m => of(m).reduce((a, ex) => a + st[ex].n, 0);
   const acc = ['shoulders', 'biceps', 'triceps'].sort((a, b) => lastI(a) - lastI(b) || count(b) - count(a)).slice(0, 2);
   items.push(...acc.map(m => pick(ex => muscleOf(ex) === m)));
+  // Пресс последним, если его не было 5 дней и больше (или не было вовсе)
+  const absAt = Object.keys(st).filter(ex => groupOf(ex) === 'abs').map(ex => st[ex].date).filter(Boolean).sort().at(-1);
+  if (!absAt || daysAgo(absAt) >= 5) items.push(pick(ex => groupOf(ex) === 'abs'));
   return { date: isoDay(Date.now()), items: items.filter(Boolean).map(guessItem) };
 }
 
@@ -409,7 +422,10 @@ function nextIdx(A) {
 }
 
 function guessItem(ex) {
-  const h = lastOf(ex);
+  const h = lastOf(ex), kind = kindOf(ex);
+  // Кардио одним заходом, минут как в прошлый раз или 10; планка 3 × 30 сек для начала
+  if (kind === 'cardio') return { ex, sets: 1, reps: h?.reps[0] || 10 };
+  if (kind === 'time') return { ex, sets: Math.max(3, h?.reps.length ?? 0), reps: h ? Math.max(...h.reps.filter(Boolean), 15) : 30 };
   const reps = h ? Math.max(8, ...h.reps.filter(Boolean)) : CAT[ex]?.mech === 'isolation' ? 12 : 8;
   return { ex, sets: Math.max(3, h?.reps.length ?? 0), reps };
 }
@@ -456,7 +472,7 @@ function workoutPage() {
       <button class="sv${s.pr ? ' pr' : ''}" data-act="delset" data-k="${s.k}">${s.pr ? '★ ' : ''}${setText(s, kind)}</button>${wl(s)}<span class="sc">${ICON_OK}</span></div>`);
     // Цифры спрятаны, пока всё по плану: новичка поля сбивают («настрой и начни»). Строка и ссылка под списком
     // открывают и закрывают их на одном месте. Веса ещё не было никогда: открыты сразу, иначе запишется 0 кг
-    const needW = kind !== 'bw' && sg.w == null && !D.warm && !done.some(s => !s.warm);
+    const needW = isWeight(kind) && sg.w == null && !D.warm && !done.some(s => !s.warm);
     const ed = view.edit ?? needW;
     rows.push(`<div class="set now${D.warm ? ' warm' : ''}"><span class="sn">${no(D)}</span><button class="sv" data-act="edit">${setLong(D, kind)}</button>${wl(D)}
       <button class="sc" data-act="done" aria-label="подход сделан"></button></div>`);
@@ -465,17 +481,19 @@ function workoutPage() {
     return `<section class="card glass cur">
       <div class="row"><button class="exh" data-act="info" data-ex="${esc(it.ex)}">${thumb(it.ex)}<b class="h2">${esc(it.ex)}</b></button>
         <span class="row"><span class="muted sm num">${work} из ${esc(it.sets)}</span><button class="ic" data-act="fold" aria-label="свернуть">${ICON_UP}</button></span></div>
-      <p class="muted sm">План: ${esc(it.sets)} ${plural(it.sets, 'подход', 'подхода', 'подходов')} по ${esc(it.reps)} раз, отдых до ♥ ${thrFor(i, n, db.settings)}</p>
+      <p class="muted sm">${kind === 'cardio' ? `План: ${esc(it.reps)} мин` : `План: ${esc(it.sets)} ${plural(it.sets, 'подход', 'подхода', 'подходов')} по ${esc(it.reps)} ${kind === 'time' ? 'сек' : 'раз'}, отдых до ♥ ${thrFor(i, n, db.settings)}`}</p>
       <p class="hint">${esc(sg.text)}</p>
-      ${A.setStart ? `<div class="setbar"><span>${D.warm ? 'Разминка' : work < it.sets ? `Подход ${work + 1} из ${esc(it.sets)}` : 'Ещё подход'}</span><b class="num" id="settimer">0:00</b></div>` : ''}
+      ${A.setStart ? `<div class="setbar"><span>${kind === 'cardio' ? 'Идёт' : D.warm ? 'Разминка' : work < it.sets ? `Подход ${work + 1} из ${esc(it.sets)}` : 'Ещё подход'}</span><b class="num" id="settimer">0:00</b></div>` : ''}
       <div class="sets">${rows.join('')}</div>
-      <button class="link accent edl${ed ? ' on' : ''}" data-act="edit">${ed ? 'Свернуть' : 'Другой вес или повторы? Поменять'}${ICON_UP}</button>
+      <button class="link accent edl${ed ? ' on' : ''}" data-act="edit">${ed ? 'Свернуть' : kind === 'cardio' || kind === 'time' ? 'Поменять план' : 'Другой вес или повторы? Поменять'}${ICON_UP}</button>
       ${D.warm && !ed ? '<button class="link accent" data-act="warm">Пропустить разминку</button>' : ''}
-      ${ed ? `<div class="steps">${kind === 'bw' ? '' : stepper('w', D.w, UNIT[kind])}${stepper('r', D.r, 'повторов')}</div>` : ''}
-      <p class="muted sm">${needW ? 'Впиши вес, начни с лёгкого. ' : ''}Закончишь, жми «Завершить». Вышло иначе: поправишь на отдыхе</p>
+      ${ed ? `<div class="steps">${noW(kind) ? '' : stepper('w', D.w, UNIT[kind])}${stepper('r', D.r, RUNIT[kind] || 'повторов')}</div>` : ''}
+      <p class="muted sm">${kind === 'cardio' ? 'Время пишет таймер. Закончишь, жми «Завершить», километры впишешь на отдыхе'
+        : kind === 'time' ? 'Держи, время пишет таймер. Закончишь, жми «Завершить подход»'
+        : `${needW ? 'Впиши вес, начни с лёгкого. ' : ''}Закончишь, жми «Завершить». Вышло иначе: поправишь на отдыхе`}</p>
       <div class="row">
-        ${ed ? `<button class="toggle${D.warm ? ' on' : ''}" data-act="warm">Разминка</button>` : ''}
-        <button class="btn primary grow done-btn" data-act="done">${ICON_OK} Завершить ${D.warm ? 'разминку' : 'подход'}</button>
+        ${ed && isWeight(kind) ? `<button class="toggle${D.warm ? ' on' : ''}" data-act="warm">Разминка</button>` : ''}
+        <button class="btn primary grow done-btn" data-act="done">${ICON_OK} Завершить${kind === 'cardio' ? '' : D.warm ? ' разминку' : ' подход'}</button>
       </div>
       <button class="link swapl" data-act="swap" data-ctx="work" data-i="${i}">${ICON_SWAP} Заменить упражнение</button></section>`;
   }).join('');
@@ -495,12 +513,12 @@ function workoutPage() {
 function readyOverlay(A) {
   const it = A.items[A.cur], D = A.draft || (A.draft = draftFor(A.cur)), c = CAT[it.ex], kind = kindOf(it.ex);
   const media = c ? `<div class="anim next"><img src="img/${c.img}-0.jpg" alt=""><img src="img/${c.img}-1.jpg" alt=""></div>` : '';
-  const noW = kind !== 'bw' && !D.warm && suggest(lastOf(it.ex), it, kind).w == null;
+  const askW = isWeight(kind) && !D.warm && suggest(lastOf(it.ex), it, kind).w == null;
   return `<div class="rest intro" role="dialog" aria-label="Начинаем">
     <h2 class="rest-h">Начинаем</h2>
     <p class="muted">Упражнение ${A.cur + 1} из ${A.items.length}</p>
     ${media}<p class="h2">${esc(it.ex)}</p>
-    <p class="next">${D.warm ? 'Разминка' : `Подход 1 из ${esc(it.sets)}`}: ${noW ? `${esc(it.reps)} раз, вес подбери сам, начни с лёгкого` : setLong(D, kind)}</p>
+    <p class="next">${kind === 'cardio' ? `План: ${esc(it.reps)} мин` : `${D.warm ? 'Разминка' : `Подход 1 из ${esc(it.sets)}`}: ${askW ? `${esc(it.reps)} раз, вес подбери сам, начни с лёгкого` : setLong(D, kind)}`}</p>
     ${c ? `<ul class="cues">${c.cues.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
     <button class="link accent" data-act="swap" data-ctx="work" data-i="${A.cur}">Тренажёр занят? Заменить</button>
     <p class="muted sm tip">Кнопка запустит таймер подхода. Закончишь, жми «Завершить подход», потом будет отдых</p>
@@ -517,7 +535,7 @@ function lastSet(s) {
   const kind = kindOf(s.ex), dur = s.st ? (s.t - s.st) / 1000 : 0;
   return `<div class="lastset">
     <p class="muted sm">${s.warm ? 'Разминка сделана' : 'Подход сделан'}${dur ? ` за ${fmtSec(dur)}` : ''}. Вышло иначе? Поправь</p>
-    <div class="msteps">${kind === 'bw' ? '' : mstep('w', s.w, UNIT[kind] || 'кг')}${mstep('r', s.r, 'раз')}</div></div>`;
+    <div class="msteps">${noW(kind) ? '' : mstep('w', s.w, UNIT[kind] || 'кг')}${mstep('r', s.r, RUNIT[kind] || 'раз')}</div></div>`;
 }
 
 function restOverlay(A) {
@@ -577,7 +595,7 @@ function weekCard() {
 
 function planRow(it, i) {
   const h = lastOf(it.ex);
-  const sub = h ? `${fmtSet(h)}, ${h.session.date ? ago(h.session.date) : h.session.label}` : 'впервые';
+  const sub = h ? `${fmtSet(h, kindOf(it.ex))}, ${h.session.date ? ago(h.session.date) : h.session.label}` : 'впервые';
   return `<div class="pl">${thumb(it.ex)}
     <button class="txt" data-act="info" data-ex="${esc(it.ex)}"><b>${esc(it.ex)}</b><small class="muted">${esc(sub)}</small></button>
     <button class="ic" data-act="swap" data-ctx="plan" data-i="${i}" aria-label="заменить">${ICON_SWAP}</button>
@@ -631,7 +649,7 @@ function addToButton(ex) {
 
 const pickRow = (ex, act = 'pick') => {
   const h = lastOf(ex);
-  const sub = h ? `${h.session.label}: ${fmtSet(h)}` : (CAT[ex]?.muscles || []).join(', ');
+  const sub = h ? `${h.session.label}: ${fmtSet(h, kindOf(ex))}` : (CAT[ex]?.muscles || []).join(', ');
   return `<button class="li" data-act="${act}" data-ex="${esc(ex)}">${thumb(ex)}<span class="txt"><b>${esc(ex)}</b><small class="muted">${esc(sub)}</small></span></button>`;
 };
 
@@ -761,7 +779,7 @@ function spark(vals) {
 }
 
 // Чем мерить прогресс: для «свой вес» повторами, для остальных рабочим весом
-const valOf = kind => x => (kind === 'bw' ? Math.max(0, ...x.reps.filter(Boolean)) : x.top);
+const valOf = kind => x => (noW(kind) ? Math.max(0, ...x.reps.filter(Boolean)) : x.top); // планка: секунды, кардио: км
 
 // ---------- прогресс ----------
 
@@ -773,7 +791,7 @@ function progressPage() {
     rows = doneNames().map(ex => ({ ex, h: exerciseHistory(db.sessions, ex) })).filter(x => x.h.length)
       .sort((a, b) => order.get(b.h.at(-1).session) - order.get(a.h.at(-1).session))
       .map(({ ex, h }) => `<button class="li" data-act="ex" data-ex="${esc(ex)}">${thumb(ex)}
-        <span class="txt"><b>${esc(ex)}</b><small class="muted">${esc(h.at(-1).session.label)}: ${esc(fmtSet(h.at(-1)))}</small></span>
+        <span class="txt"><b>${esc(ex)}</b><small class="muted">${esc(h.at(-1).session.label)}: ${esc(fmtSet(h.at(-1), kindOf(ex)))}</small></span>
         ${spark(h.map(valOf(kindOf(ex))))}</button>`);
   } else {
     rows = db.sessions.map((s, k) => [s, k]).reverse().map(([s, k]) => {
@@ -801,7 +819,7 @@ function exercisePage() {
   const best = h.reduce((a, x) => (val(x) > val(a) ? x : a));
   const e1 = Math.max(...h.map(x => x.e1));
   const series = [{ cls: 'l1', pts: h.map((x, i) => [i, val(x)]) }];
-  if (kind !== 'bw' && e1) series.push({ cls: 'l2', pts: h.map((x, i) => [i, x.e1]).filter(p => p[1]) });
+  if (isWeight(kind) && e1) series.push({ cls: 'l2', pts: h.map((x, i) => [i, x.e1]).filter(p => p[1]) });
   const recov = db.sessions.map(s => ({ s, v: avg((s.rests || []).filter(r => r.ex === ex && r.toThr != null).map(r => r.toThr)) })).filter(x => x.v != null);
   const idx = new Map(db.sessions.map((s, i) => [s, i]));
   const list = [...h].reverse().map(x => {
@@ -812,12 +830,12 @@ function exercisePage() {
   }).join('');
   return `${head}
     <div class="stats">
-      <div class="stat glass"><small>Лучший</small><b>${kind === 'bw' ? `${val(best)} повт.` : fmtW(best.top)}</b><small>${esc(best.session.label)}</small></div>
-      <div class="stat glass"><small>Последний</small><b>${esc(fmtSet(h.at(-1)))}</b><small>${esc(h.at(-1).session.label)}</small></div>
-      ${kind !== 'bw' && e1 ? `<div class="stat glass"><small>Максимум на раз</small><b>${fmtW(Math.round(e1 * 2) / 2)}</b><small>примерно</small></div>` : ''}
+      <div class="stat glass"><small>Лучший</small><b>${kind === 'bw' ? `${val(best)} повт.` : kind === 'time' ? fmtSec(val(best)) : kind === 'cardio' ? `${fmtW(best.top)} км` : fmtW(best.top)}</b><small>${esc(best.session.label)}</small></div>
+      <div class="stat glass"><small>Последний</small><b>${esc(fmtSet(h.at(-1), kind))}</b><small>${esc(h.at(-1).session.label)}</small></div>
+      ${isWeight(kind) && e1 ? `<div class="stat glass"><small>Максимум на раз</small><b>${fmtW(Math.round(e1 * 2) / 2)}</b><small>примерно</small></div>` : ''}
     </div>
     <section class="card glass">
-      <div class="row"><h3>${kind === 'bw' ? 'Повторы' : 'Рабочий вес'}</h3>
+      <div class="row"><h3>${{ bw: 'Повторы', time: 'Время, сек', cardio: 'Дистанция, км' }[kind] || 'Рабочий вес'}</h3>
         ${series.length > 1 ? '<span class="legend"><span><i></i>вес</span><span><i class="l2"></i>максимум</span></span>' : ''}</div>
       ${chart({ series, axis: [h[0].session.label, h.at(-1).session.label] })}</section>
     ${recov.length ? `<section class="card glass"><h3>Восстановление пульса</h3>
@@ -829,7 +847,7 @@ function exercisePage() {
 
 function summaryCard(s, k) {
   const work = s.sets.filter(x => !x.warm);
-  const tons = Math.round(work.reduce((a, x) => a + (x.w || 0) * (x.r || 0) * (kindOf(x.ex) === 'side' ? 2 : 1), 0) / 100) / 10;
+  const tons = Math.round(work.reduce((a, x) => a + (isWeight(kindOf(x.ex)) ? (x.w || 0) * (x.r || 0) * (kindOf(x.ex) === 'side' ? 2 : 1) : 0), 0) / 100) / 10;
   const mins = s.start && s.end ? Math.round((s.end - s.start) / 6e4) : null;
   // Под нагрузкой: сумма времени подходов от «Начать подход» до «Завершить» (есть с v0.8)
   const tut = s.sets.reduce((a, x) => a + (x.st && x.t > x.st ? x.t - x.st : 0), 0) / 1000;
@@ -850,7 +868,7 @@ function summaryCard(s, k) {
       ${mins ? `<div class="stat"><small>Время</small><b><span data-count="${mins}">${mins}</span> мин</b></div>` : ''}
       ${tut ? `<div class="stat"><small>Под нагрузкой</small><b>${fmtSec(tut)}</b></div>` : ''}
     </div>
-    ${recs.length ? `<ul class="recs">${recs.map(r => `<li><span class="gold">★</span><span>${esc(r.ex)}: <b>${setText(r.top, kindOf(r.ex))}</b></span><small class="muted">${recordText(r.what)}</small></li>`).join('')}</ul>` : ''}
+    ${recs.length ? `<ul class="recs">${recs.map(r => `<li><span class="gold">★</span><span>${esc(r.ex)}: <b>${setText(r.top, kindOf(r.ex))}</b></span><small class="muted">${recordText(r.what, kindOf(r.ex))}</small></li>`).join('')}</ul>` : ''}
     ${pulse}</section>`;
 }
 
@@ -1129,7 +1147,7 @@ const ACT = {
   fold: () => { view.fold = true; },
   edit: () => { view.edit = !$('.card.cur .steps'); }, // по экрану: цифры бывают открыты и без нажатия (нет веса)
   step: d => {
-    const D = A().draft, inc = d.f === 'w' ? STEP[kindOf(curItem().ex)] : 1;
+    const D = A().draft, kind = kindOf(curItem().ex), inc = d.f === 'w' ? STEP[kind] : rStep(kind);
     D[d.f] = Math.max(0, Math.round((+D[d.f] + d.d * inc) * 100) / 100);
   },
   // Без разминки: рабочие цифры по подсказке, а не вес разминки (иначе все подходы выходили 20 × 12)
@@ -1140,9 +1158,14 @@ const ACT = {
   },
   // «Завершить подход»: время подхода от «Начать подход» (st), цифры по плану, поправить можно на отдыхе
   done: () => {
-    const a = A(), it = curItem(), D = a.draft, t = Date.now();
-    const set = { ex: it.ex, w: kindOf(it.ex) === 'bw' ? 0 : D.w, r: D.r, warm: D.warm, t };
-    if (a.setStart && t - a.setStart < 3 * 36e5) set.st = a.setStart;
+    const a = A(), it = curItem(), D = a.draft, t = Date.now(), kind = kindOf(it.ex);
+    const set = { ex: it.ex, w: noW(kind) ? 0 : D.w, r: D.r, warm: D.warm, t };
+    if (a.setStart && t - a.setStart < 3 * 36e5) {
+      set.st = a.setStart;
+      // Планка и кардио: время берём с таймера подхода, поправить можно на отдыхе
+      if (kind === 'time') set.r = Math.round((t - a.setStart) / 1000);
+      if (kind === 'cardio') set.r = Math.max(1, Math.round((t - a.setStart) / 6e4));
+    }
     delete a.setStart;
     const what = prOf(set, a.sets);
     if (what) set.pr = what;
@@ -1150,11 +1173,11 @@ const ACT = {
     a.rest = { ex: it.ex, start: t, thr: thrFor(a.cur, a.items.length, db.settings) };
     a.draft = draftFor(a.cur);
     delete view.edit;
-    if (what) setTimeout(() => celebrate(recordText(what), `${it.ex}: ${setText(set, kindOf(it.ex))}`), 50);
+    if (what) setTimeout(() => celebrate(recordText(what, kind), `${it.ex}: ${setText(set, kind)}`), 50);
   },
   // −/+ на экране отдыха: правим последний подход, рекорд и черновик следующего пересчитываются
   lstep: d => {
-    const a = A(), s = a.sets.at(-1), inc = d.f === 'w' ? STEP[kindOf(s.ex)] : 1;
+    const a = A(), s = a.sets.at(-1), kind = kindOf(s.ex), inc = d.f === 'w' ? STEP[kind] : rStep(kind);
     s[d.f] = Math.max(0, Math.round(((+s[d.f] || 0) + d.d * inc) * 100) / 100);
     relast(a);
   },
