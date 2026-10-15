@@ -276,6 +276,8 @@ textarea { margin: 8px 0; font-size: 16px; resize: vertical; }
   backdrop-filter: blur(36px) saturate(150%);
   animation: fade 0.3s ease;
 }
+.intro .rest-h { color: var(--accent-t); }
+.intro .anim.next { width: min(86vw, 340px); max-height: 32dvh; }
 .rest-h { font-size: 30px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--pulse); }
 .timer { position: relative; font-size: 104px; font-weight: 200; line-height: 1; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; transition: color 0.6s ease; }
 .timer::before {

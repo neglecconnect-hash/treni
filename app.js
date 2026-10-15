@@ -15,8 +15,8 @@ const II = icon => `<span class="ii">${icon}</span>`;
 
 // Мини-гайд: [заголовок, текст с разметкой]. Тексты для человека в зале: коротко, без терминов
 const GUIDE_USE = [
-  ['Сегодня', `Приложение само собирает тренировку из того, что ты давно не делал. Не хочешь упражнение: ${II(ICON_SWAP)} заменит на похожее, ${II(ICON_X)} уберёт. Потом «Приступить».`],
-  ['Подход', 'Подходы идут списком, текущий подсвечен синим, вес и повторы уже стоят по плану. Сделай подход и жми «Сделано»: строка позеленеет, начнётся отдых. Вышло иначе: сначала поправь кнопками − и +. Разминку отметь кнопкой «Разминка».'],
+  ['Сегодня', `Приложение само собирает тренировку из того, что ты давно не делал. Не хочешь упражнение: ${II(ICON_SWAP)} заменит на похожее, ${II(ICON_X)} уберёт. Потом «Приступить»: покажет первое упражнение и как его делать, жми «Начать подход».`],
+  ['Подход', 'Подходы идут списком, текущий подсвечен синим, вес и повторы уже стоят по плану. Сделай подход и жми «Сделано»: строка позеленеет, начнётся отдых. Вышло иначе: сначала нажми на синюю строку или «Поправить цифры», там же кнопка «Разминка».'],
   ['Отдых', 'На часах запусти «Тренировка», «Силовая» и смотри на пульс. Упал ниже порога (110 в начале, 115 ближе к концу): жми «Начать подход». Таймер зеленеет, когда в прошлый раз уже было пора.'],
   ['Ошибся', 'На экране отдыха «Исправить»: подход вернётся в поля. Или нажми на зелёный подход в списке: он удалится, а внизу будет «Вернуть».'],
   ['Конец', '«Закончить»: итог, сколько поднял, рекорды. Тренировка сама сохранится в GitHub.'],
@@ -400,7 +400,8 @@ function guessItem(ex) {
 }
 
 function startWith(name, program, items) {
-  db.active = { program, name, items: items.map(i => ({ ...i })), cur: 0, sets: [], rests: [], rest: null, startedAt: Date.now() };
+  // ready: экран «Начинаем» перед первым подходом, пустую программу сразу в список
+  db.active = { program, name, items: items.map(i => ({ ...i })), cur: 0, sets: [], rests: [], rest: null, startedAt: Date.now(), ready: items.length > 0 };
   db.active.draft = draftFor(0);
   wake();
 }
@@ -434,7 +435,9 @@ function workoutPage() {
     const no = s => (s.warm ? 'Р' : ++wn);
     const rows = done.map(s => `<div class="set ok${s.warm ? ' warm' : ''}"><span class="sn">${no(s)}</span>
       <button class="sv${s.pr ? ' pr' : ''}" data-act="delset" data-k="${s.k}">${s.pr ? '★ ' : ''}${setText(s, kind)}</button><span class="sc">${ICON_OK}</span></div>`);
-    rows.push(`<div class="set now${D.warm ? ' warm' : ''}"><span class="sn">${no(D)}</span><span class="sv">${setText(D, kind)}</span>
+    // Цифры спрятаны, пока всё по плану: новичка поля сбивают («настрой и начни»). Нажатие на строку их открывает
+    const ed = view.edit;
+    rows.push(`<div class="set now${D.warm ? ' warm' : ''}"><span class="sn">${no(D)}</span><button class="sv" data-act="edit">${setText(D, kind)}</button>
       <button class="sc" data-act="done" aria-label="подход сделан"></button></div>`);
     const fw = D.warm ? { w: sg.w ?? 0, r: it.reps } : D;
     for (let k = wn; k < it.sets; k++) rows.push(`<div class="set"><span class="sn">${k + 1}</span><span class="sv">${setText(fw, kind)}</span><span class="sc"></span></div>`);
@@ -444,10 +447,11 @@ function workoutPage() {
       <p class="muted sm">План ${esc(it.sets)} × ${esc(it.reps)}, отдых до ♥ ${thrFor(i, n, db.settings)}</p>
       <p class="hint">${esc(sg.text)}</p>
       <div class="sets">${rows.join('')}</div>
-      <p class="muted sm">${D.warm ? 'Сделай разминку' : 'Сделай подход'} и жми «Сделано». Вышло иначе: сначала поправь цифры</p>
-      <div class="steps">${kind === 'bw' ? '' : stepper('w', D.w, UNIT[kind])}${stepper('r', D.r, 'повторов')}</div>
+      ${ed ? `<div class="steps">${kind === 'bw' ? '' : stepper('w', D.w, UNIT[kind])}${stepper('r', D.r, 'повторов')}</div>`
+        : '<button class="link accent" data-act="edit">Вышло иначе? Поправить цифры</button>'}
+      <p class="muted sm">${D.warm ? 'Сделай разминку' : 'Сделай подход'} и нажми «Сделано»</p>
       <div class="row">
-        <button class="toggle${D.warm ? ' on' : ''}" data-act="warm">Разминка</button>
+        ${ed ? `<button class="toggle${D.warm ? ' on' : ''}" data-act="warm">Разминка</button>` : ''}
         <button class="btn primary grow done-btn" data-act="done">${ICON_OK} Сделано</button>
       </div>
       <button class="link swapl" data-act="swap" data-ctx="work" data-i="${i}">${ICON_SWAP} Заменить упражнение</button></section>`;
@@ -460,7 +464,21 @@ function workoutPage() {
     ${stale}${cards}
     <button class="btn wide" data-act="add" data-ctx="work">Добавить упражнение</button>
     <button class="btn ghost wide" data-act="finish">Закончить тренировку</button>
-    ${A.rest ? restOverlay(A) : ''}`;
+    ${A.rest ? restOverlay(A) : A.ready ? readyOverlay(A) : ''}`;
+}
+
+// Перед первым подходом: что за упражнение, как делать и одна кнопка. Тот же вид, что у отдыха, без таймера
+function readyOverlay(A) {
+  const it = A.items[A.cur], D = A.draft || (A.draft = draftFor(A.cur)), c = CAT[it.ex];
+  const media = c ? `<div class="anim next"><img src="img/${c.img}-0.jpg" alt=""><img src="img/${c.img}-1.jpg" alt=""></div>` : '';
+  return `<div class="rest intro" role="dialog" aria-label="Начинаем">
+    <h2 class="rest-h">Начинаем</h2>
+    <p class="muted">Упражнение ${A.cur + 1} из ${A.items.length}</p>
+    ${media}<p class="h2">${esc(it.ex)}</p>
+    <p class="next">${D.warm ? 'Разминка' : `Подход 1 из ${esc(it.sets)}`}: ${setText(D, kindOf(it.ex))}</p>
+    <p class="muted sm">Сделай подход и нажми «Сделано». Потом будет отдых</p>
+    <button class="btn primary xl" data-act="go">Начать подход</button>
+    <button class="link" data-act="finish">Отменить</button></div>`;
 }
 
 function restOverlay(A) {
@@ -1042,7 +1060,8 @@ const ACT = {
   startplan: () => startWith(planName(db.plan.items), null, db.plan.items),
   start: d => { const p = db.programs.find(x => x.id === d.id); startWith(p.name, p.id, p.items); view = { tab: 'today' }; },
   resume: () => { A().resumed = Date.now(); },
-  cur: d => { A().cur = +d.i; A().draft = draftFor(+d.i); },
+  cur: d => { A().cur = +d.i; A().draft = draftFor(+d.i); delete view.edit; },
+  edit: () => { view.edit = true; },
   step: d => {
     const D = A().draft, inc = d.f === 'w' ? STEP[kindOf(curItem().ex)] : 1;
     D[d.f] = Math.max(0, Math.round((+D[d.f] + d.d * inc) * 100) / 100);
@@ -1057,6 +1076,7 @@ const ACT = {
     a.sets.push(set);
     a.rest = { ex: it.ex, start: t, thr: thrFor(a.cur, a.items.length, db.settings) };
     a.draft = draftFor(a.cur);
+    delete view.edit;
     if (what) setTimeout(() => celebrate(recordText(what), `${it.ex}: ${setText(set, kindOf(it.ex))}`), 50);
   },
   fix: () => {
@@ -1065,9 +1085,11 @@ const ACT = {
     a.rest = null;
     a.cur = Math.max(0, a.items.findIndex(i => i.ex === s.ex));
     a.draft = { w: s.w, r: s.r, warm: s.warm };
+    view.edit = true;
   },
   go: () => {
     const a = A();
+    if (a.ready) return void delete a.ready;
     a.rests.push({ ...a.rest, end: Date.now() });
     a.rest = null;
     const ni = nextIdx(a);
