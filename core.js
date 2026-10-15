@@ -60,16 +60,22 @@ function parseDate(s) {
   return m ? new Date(+m[3], m[2] - 1, +m[1], +m[4], +m[5], +(m[6] || 0)).getTime() : Date.parse(s);
 }
 
-// Текст из Быстрой команды: строки «дата;уд/мин»
+// Текст из Быстрой команды: строки «дата;уд/мин» (с повтором) или два столбика: все даты, потом все значения
+// (без повтора, на тысячах замеров в разы быстрее). Оба вида = i-я дата в паре с i-м значением.
+// Нули из Здоровья тоже считаем, иначе столбики съедут, и отбрасываем уже после склейки.
+// Дата только со временем: без него замер бесполезен, а Date.parse съедает и мусор вроде «78»
 export function parseHR(text) {
-  const out = [];
-  for (const line of String(text || '').split(/\r?\n/)) {
-    const m = line.match(/^\s*(.+?)\s*[;\t]\s*(\d{2,3})(?:[.,]\d+)?/);
-    if (!m) continue;
-    const t = parseDate(m[1].trim());
-    if (!isNaN(t)) out.push({ t, bpm: +m[2] });
+  const ts = [], vals = [];
+  for (const tok of String(text || '').split(/[\r\n;\t]+/)) {
+    const v = tok.match(/^\s*(\d{1,3})(?:[.,]\d+)?(?:\s.*)?$/);
+    if (v) vals.push(+v[1]);
+    else if (/\d:\d\d/.test(tok)) {
+      const t = parseDate(tok.trim());
+      if (!isNaN(t)) ts.push(t);
+    }
   }
-  return out.sort((a, b) => a.t - b.t);
+  if (ts.length !== vals.length) return [];
+  return ts.map((t, i) => ({ t, bpm: vals[i] })).filter(p => p.bpm >= 10).sort((a, b) => a.t - b.t);
 }
 
 // Отдых {start, end, thr} в мс. Пик = максимум за 60 с после подхода (пульс догоняет с задержкой),
