@@ -171,7 +171,10 @@ button:disabled { opacity: 0.4; }
   animation: now 2.4s ease-in-out infinite;
 }
 .set.now .sc { opacity: 1; color: var(--accent-t); }
-.set.warm .sn { color: var(--warn); }
+.set.warm .sn, .set .wl { color: var(--warn); }
+.set .wl { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+/* Под отдыхом и «Начинаем» мерцание стоит: тень плюс размытие поверх каждый кадр съедают батарею */
+main:has(> .rest) .set.now { animation: none; }
 @keyframes now { 50% { box-shadow: inset 0 0 0 1.5px rgba(10, 132, 255, 0.75), 0 0 22px rgba(10, 132, 255, 0.35); } }
 
 /* Полоска всей тренировки под заголовком */
@@ -280,7 +283,8 @@ textarea { margin: 8px 0; font-size: 16px; resize: vertical; }
 /* Экран отдыха. Прокручивается, чтобы на маленьком iPhone «Иду» не уходила за край */
 .rest {
   position: fixed; inset: 0; z-index: 30;
-  display: grid; align-content: center; justify-items: center; gap: 14px;
+  /* Строки не сжимаются (иначе фото с aspect-ratio наезжает на текст); не влезло: прокрутка, а не обрезка сверху */
+  display: grid; grid-auto-rows: max-content; align-content: center; align-content: safe center; justify-items: center; gap: 14px;
   padding: calc(env(safe-area-inset-top) + 20px) 24px calc(env(safe-area-inset-bottom) + 24px);
   overflow-y: auto; overscroll-behavior: contain;
   text-align: center;
@@ -290,7 +294,17 @@ textarea { margin: 8px 0; font-size: 16px; resize: vertical; }
   animation: fade 0.3s ease;
 }
 .intro .rest-h { color: var(--accent-t); }
+.rest .cues { max-width: 340px; text-align: left; }
+.rest .link.accent { justify-self: center; padding: 10px; }
 .intro .anim.next { width: min(86vw, 340px); max-height: 32dvh; }
+/* iPhone SE и подобные: фото меньше, советы и подсказка уступают место кнопке (советы есть в карточке упражнения) */
+@media (max-height: 700px) {
+  .rest .cues, .rest .tip { display: none; }
+  .rest { gap: 10px; }
+  .rest .anim.next, .intro .anim.next { max-height: 18dvh; }
+  .rest .timer { font-size: 80px; }
+  .rest .rest-h { font-size: 24px; }
+}
 .rest-h { font-size: 30px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--pulse); }
 .timer { position: relative; font-size: 104px; font-weight: 200; line-height: 1; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; transition: color 0.6s ease; }
 .timer::before {

@@ -2,7 +2,7 @@
 // tools/deploy.py ставит в VERSION хэш файлов, новый service worker скачивает всё заново и удаляет старую версию.
 // Иначе старые и новые файлы смешиваются, и модули не сходятся (белый экран).
 // Фото в отдельном кэше, они не меняются и не перекачиваются при каждом обновлении.
-const VERSION = '069305ea16';
+const VERSION = '9f0e2db996';
 const CODE = `treni-${VERSION}`;
 const IMG = 'treni-img'; // так же в app.js
 const FILES = ['./', 'index.html', 'style.css', 'boot.js', 'app.js', 'core.js', 'catalog.js', 'manifest.webmanifest', 'icon-180.png', 'icon-512.png'];

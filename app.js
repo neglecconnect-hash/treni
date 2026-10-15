@@ -15,11 +15,11 @@ const II = icon => `<span class="ii">${icon}</span>`;
 
 // Мини-гайд: [заголовок, текст с разметкой]. Тексты для человека в зале: коротко, без терминов
 const GUIDE_USE = [
-  ['Сегодня', `Приложение само собирает тренировку из того, что ты давно не делал. Не хочешь упражнение: ${II(ICON_SWAP)} заменит на похожее, ${II(ICON_X)} уберёт. Потом «Приступить»: покажет первое упражнение и как его делать, жми «Начать подход».`],
+  ['Сегодня', `Приложение само собирает тренировку из упражнений, которых давно не было. Не хочешь упражнение: ${II(ICON_SWAP)} заменит на похожее, ${II(ICON_X)} уберёт. Потом «Приступить»: покажет первое упражнение и как его делать, жми «Начать подход».`],
   ['Подход', 'Подходы идут списком, текущий подсвечен синим, вес и повторы уже стоят по плану. Сделай подход и жми «Сделано»: строка позеленеет, начнётся отдых. Вышло иначе: сначала нажми на синюю строку или «Поправить цифры», там же кнопка «Разминка».'],
   ['Отдых', 'На часах запусти «Тренировка», «Силовая» и смотри на пульс. Упал ниже порога (110 в начале, 115 ближе к концу): жми «Начать подход». Таймер зеленеет, когда в прошлый раз уже было пора.'],
-  ['Ошибся', 'На экране отдыха «Исправить»: подход вернётся в поля. Или нажми на зелёный подход в списке: он удалится, а внизу будет «Вернуть».'],
-  ['Конец', '«Закончить»: итог, сколько поднял, рекорды. Тренировка сама сохранится в GitHub.'],
+  ['Ошибка в цифрах', 'На экране отдыха «Исправить»: подход вернётся в поля. Или нажми на зелёный подход в списке: он удалится, а внизу будет «Вернуть».'],
+  ['Конец', '«Закончить»: итог, сколько поднято, рекорды. Если подключён GitHub, тренировка сама сохранится там, если нет, время от времени делай бэкап в Настройках.'],
   ['Пульс', 'Дома запусти команду «Трени пульс» и нажми «Вставить пульс» на экране итога. Приложение разберёт каждый отдых. Как собрать команду: вторая вкладка этого гайда.'],
   ['Остальное', '«Упражнения»: все упражнения с фото и техникой. «Прогресс»: графики и прошлые тренировки. «Настройки»: пороги, цель, GitHub.'],
 ];
@@ -58,6 +58,8 @@ const doneNames = () => [...new Set(db.sessions.flatMap(s => s.sets.map(x => x.e
 const allExercises = () => [...new Set([...CATALOG.map(c => c.name), ...Object.keys(db.exercises), ...doneNames()])]
   .sort((a, b) => a.localeCompare(b, 'ru'));
 // Подтягивания без отягощения и «свой вес» показываем одними повторами
+// Для новичка словами: «52,5 кг, 12 раз»
+const setLong = (x, kind) => esc(kind === 'bw' || (kind === 'added' && !x.w) ? `${x.r ?? '?'} раз` : `${x.w == null ? '?' : fmtW(x.w)} ${UNIT[kind] || 'кг'}, ${x.r ?? '?'} раз`);
 const setText = (x, kind) => esc(kind === 'bw' || (kind === 'added' && !x.w) ? `${x.r ?? '?'}` : `${x.w == null ? '?' : fmtW(x.w)} × ${x.r ?? '?'}`);
 const thumb = ex => (CAT[ex] ? `<img class="th" src="img/${CAT[ex].img}-0.jpg" alt="" loading="lazy">` : `<span class="th ph">${esc(ex[0])}</span>`);
 
@@ -139,7 +141,8 @@ function toast(msg, undo) {
   t.append(Object.assign(document.createElement('span'), { textContent: msg }));
   if (undo) {
     const b = Object.assign(document.createElement('button'), { className: 'undo', textContent: 'Вернуть' });
-    b.onclick = () => { t.remove(); undo(); save(); render(); };
+    // Как в общем обработчике кликов: вернуть план на день не повод считать телефон «новее» сервера
+    b.onclick = () => { const was = snap(); t.remove(); undo(); if (snap() !== was) save(); else saveLocal(); render(); };
     t.append(b);
   }
   document.body.append(t);
@@ -403,6 +406,8 @@ function guessItem(ex) {
 function startWith(name, program, items) {
   // ready: экран «Начинаем» перед первым подходом, пустую программу сразу в список
   db.active = { program, name, items: items.map(i => ({ ...i })), cur: 0, sets: [], rests: [], rest: null, startedAt: Date.now(), ready: items.length > 0 };
+  delete view.fold; // свёрнутая карточка и открытые цифры прошлой тренировки сюда не переезжают
+  delete view.edit;
   db.active.draft = draftFor(0);
   wake();
 }
@@ -435,24 +440,27 @@ function workoutPage() {
     // Нажатие на сделанный удаляет его (внизу «Вернуть»)
     let wn = 0;
     const no = s => (s.warm ? 'Р' : ++wn);
+    const wl = s => (s.warm ? '<small class="wl">разминка</small>' : '');
     const rows = done.map(s => `<div class="set ok${s.warm ? ' warm' : ''}"><span class="sn">${no(s)}</span>
-      <button class="sv${s.pr ? ' pr' : ''}" data-act="delset" data-k="${s.k}">${s.pr ? '★ ' : ''}${setText(s, kind)}</button><span class="sc">${ICON_OK}</span></div>`);
+      <button class="sv${s.pr ? ' pr' : ''}" data-act="delset" data-k="${s.k}">${s.pr ? '★ ' : ''}${setText(s, kind)}</button>${wl(s)}<span class="sc">${ICON_OK}</span></div>`);
     // Цифры спрятаны, пока всё по плану: новичка поля сбивают («настрой и начни»). Строка и ссылка под списком
-    // открывают и закрывают их на одном месте
-    const ed = view.edit;
-    rows.push(`<div class="set now${D.warm ? ' warm' : ''}"><span class="sn">${no(D)}</span><button class="sv" data-act="edit">${setText(D, kind)}</button>
+    // открывают и закрывают их на одном месте. Веса ещё не было никогда: открыты сразу, иначе запишется 0 кг
+    const needW = kind !== 'bw' && sg.w == null && !D.warm && !done.some(s => !s.warm);
+    const ed = view.edit ?? needW;
+    rows.push(`<div class="set now${D.warm ? ' warm' : ''}"><span class="sn">${no(D)}</span><button class="sv" data-act="edit">${setLong(D, kind)}</button>${wl(D)}
       <button class="sc" data-act="done" aria-label="подход сделан"></button></div>`);
     const fw = D.warm ? { w: sg.w ?? 0, r: it.reps } : D;
     for (let k = wn; k < it.sets; k++) rows.push(`<div class="set"><span class="sn">${k + 1}</span><span class="sv">${setText(fw, kind)}</span><span class="sc"></span></div>`);
     return `<section class="card glass cur">
       <div class="row"><button class="exh" data-act="info" data-ex="${esc(it.ex)}">${thumb(it.ex)}<b class="h2">${esc(it.ex)}</b></button>
         <span class="row"><span class="muted sm num">${work} из ${esc(it.sets)}</span><button class="ic" data-act="fold" aria-label="свернуть">${ICON_UP}</button></span></div>
-      <p class="muted sm">План ${esc(it.sets)} × ${esc(it.reps)}, отдых до ♥ ${thrFor(i, n, db.settings)}</p>
+      <p class="muted sm">План: ${esc(it.sets)} ${plural(it.sets, 'подход', 'подхода', 'подходов')} по ${esc(it.reps)} раз, отдых до ♥ ${thrFor(i, n, db.settings)}</p>
       <p class="hint">${esc(sg.text)}</p>
       <div class="sets">${rows.join('')}</div>
       <button class="link accent edl${ed ? ' on' : ''}" data-act="edit">${ed ? 'Свернуть' : 'Вышло иначе? Поправить цифры'}${ICON_UP}</button>
+      ${D.warm && !ed ? '<button class="link accent" data-act="warm">Пропустить разминку</button>' : ''}
       ${ed ? `<div class="steps">${kind === 'bw' ? '' : stepper('w', D.w, UNIT[kind])}${stepper('r', D.r, 'повторов')}</div>` : ''}
-      <p class="muted sm">${D.warm ? 'Сделай разминку' : 'Сделай подход'} и нажми «Сделано»</p>
+      <p class="muted sm">${needW ? 'Впиши вес, начни с лёгкого. Потом сделай подход' : D.warm ? 'Сделай разминку' : 'Сделай подход'} и нажми «Сделано»</p>
       <div class="row">
         ${ed ? `<button class="toggle${D.warm ? ' on' : ''}" data-act="warm">Разминка</button>` : ''}
         <button class="btn primary grow done-btn" data-act="done">${ICON_OK} Сделано</button>
@@ -465,6 +473,7 @@ function workoutPage() {
   return `<header class="hd"><p class="sub num" id="elapsed"></p><h1 class="t2">${esc(A.name)}</h1>
     <div class="bar" role="progressbar" aria-valuenow="${got}" aria-valuemax="${plan}"><i style="width:${plan ? (got / plan) * 100 : 0}%"></i></div></header>
     ${stale}${cards}
+    ${view.fold && A.items[A.cur] ? `<button class="btn primary wide go-btn" data-act="cur" data-i="${A.cur}">Продолжить: ${esc(A.items[A.cur].ex)}</button>` : ''}
     <button class="btn wide" data-act="add" data-ctx="work">Добавить упражнение</button>
     <button class="btn ghost wide" data-act="finish">Закончить тренировку</button>
     ${A.rest ? restOverlay(A) : A.ready ? readyOverlay(A) : ''}`;
@@ -472,14 +481,17 @@ function workoutPage() {
 
 // Перед первым подходом: что за упражнение, как делать и одна кнопка. Тот же вид, что у отдыха, без таймера
 function readyOverlay(A) {
-  const it = A.items[A.cur], D = A.draft || (A.draft = draftFor(A.cur)), c = CAT[it.ex];
+  const it = A.items[A.cur], D = A.draft || (A.draft = draftFor(A.cur)), c = CAT[it.ex], kind = kindOf(it.ex);
   const media = c ? `<div class="anim next"><img src="img/${c.img}-0.jpg" alt=""><img src="img/${c.img}-1.jpg" alt=""></div>` : '';
+  const noW = kind !== 'bw' && !D.warm && suggest(lastOf(it.ex), it, kind).w == null;
   return `<div class="rest intro" role="dialog" aria-label="Начинаем">
     <h2 class="rest-h">Начинаем</h2>
     <p class="muted">Упражнение ${A.cur + 1} из ${A.items.length}</p>
     ${media}<p class="h2">${esc(it.ex)}</p>
-    <p class="next">${D.warm ? 'Разминка' : `Подход 1 из ${esc(it.sets)}`}: ${setText(D, kindOf(it.ex))}</p>
-    <p class="muted sm">Сделай подход и нажми «Сделано». Потом будет отдых</p>
+    <p class="next">${D.warm ? 'Разминка' : `Подход 1 из ${esc(it.sets)}`}: ${noW ? `${esc(it.reps)} раз, вес подбери сам, начни с лёгкого` : setLong(D, kind)}</p>
+    ${c ? `<ul class="cues">${c.cues.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+    <button class="link accent" data-act="swap" data-ctx="work" data-i="${A.cur}">Тренажёр занят? Заменить</button>
+    <p class="muted sm tip">Сделай подход и нажми «Сделано». Потом будет отдых</p>
     <button class="btn primary xl" data-act="go">Начать подход</button>
     <button class="link" data-act="finish">Отменить</button></div>`;
 }
@@ -493,11 +505,14 @@ function restOverlay(A) {
   const left = doneWork < it.sets;
   const nd = ni === A.cur ? A.draft : draftFor(ni);
   const next = left
-    ? `Дальше: ${esc(it.ex)}, ${nd.warm ? 'разминка' : `подход ${doneWork + 1} из ${esc(it.sets)}`}, ${setText(nd, kindOf(it.ex))}`
+    ? `Дальше: ${esc(it.ex)}, ${nd.warm ? 'разминка' : `подход ${doneWork + 1} из ${esc(it.sets)}`}, ${setLong(nd, kindOf(it.ex))}`
     : 'Всё по плану сделано';
-  // Переход на новое упражнение: показываем, как его делать, пока отдыхаешь
+  // Переход на новое упражнение: показываем, как его делать, пока отдыхаешь, и даём заменить, если тренажёр занят
   const c = left && ni !== A.cur && CAT[it.ex];
   const media = c ? `<div class="anim next"><img src="img/${c.img}-0.jpg" alt=""><img src="img/${c.img}-1.jpg" alt=""></div>` : '';
+  const swap = left && ni !== A.cur ? `<button class="link accent" data-act="swap" data-ctx="work" data-i="${ni}">Тренажёр занят? Заменить</button>` : '';
+  // Без часов и без прошлых замеров цель отдыха полторы минуты: таймер так же зеленеет
+  const goal = was || 90;
   const buttons = left
     ? '<button class="btn primary xl" data-act="go">Начать подход</button><button class="link" data-act="finish">Закончить тренировку</button>'
     : '<button class="btn primary xl" data-act="finish">Закончить</button><button class="link" data-act="go">Ещё подход</button>';
@@ -505,11 +520,13 @@ function restOverlay(A) {
     <h2 class="rest-h">Отдых</h2>
     <p class="muted">Записано: ${last ? setText(last, kindOf(last.ex)) : ''}${last?.warm ? ', разминка' : ''}
       <button class="link inline" data-act="fix">Исправить</button></p>
-    <div class="timer" id="timer" data-hint="${was ? Math.round(was) : ''}">0:00</div>
+    <div class="timer" id="timer" data-hint="${Math.round(goal)}">0:00</div>
     <p class="thr-t"><span class="heart" aria-hidden="true">♥</span> подход, когда пульс ниже <b>${esc(R.thr)}</b></p>
     ${was ? `<p class="muted sm" id="ready-no">В прошлый раз пульс падал до порога в среднем за ${fmtSec(was)}</p>
-      <p class="sm ok" id="ready" hidden>Обычно к этому времени пульс уже ниже ${esc(R.thr)}. Глянь на часы</p>` : ''}
-    ${media}<p class="next">${next}</p>
+      <p class="sm ok" id="ready" hidden>Обычно к этому времени пульс уже ниже ${esc(R.thr)}. Глянь на часы</p>`
+      : `<p class="muted sm" id="ready-no">Без часов: отдых около полутора минут</p>
+      <p class="sm ok" id="ready" hidden>Полторы минуты прошло, можно начинать</p>`}
+    ${media}<p class="next">${next}</p>${swap}
     ${buttons}</div>`;
 }
 
@@ -537,7 +554,7 @@ function weekCard() {
 
 function planRow(it, i) {
   const h = lastOf(it.ex);
-  const sub = h ? `${fmtSet(h)}, ${h.session.date ? ago(h.session.date) : h.session.label}` : 'ещё не делал';
+  const sub = h ? `${fmtSet(h)}, ${h.session.date ? ago(h.session.date) : h.session.label}` : 'впервые';
   return `<div class="pl">${thumb(it.ex)}
     <button class="txt" data-act="info" data-ex="${esc(it.ex)}"><b>${esc(it.ex)}</b><small class="muted">${esc(sub)}</small></button>
     <button class="ic" data-act="swap" data-ctx="plan" data-i="${i}" aria-label="заменить">${ICON_SWAP}</button>
@@ -546,10 +563,8 @@ function planRow(it, i) {
 
 function todayPage() {
   ensurePlan();
-  const empty = db.sessions.length ? '' : `<section class="card glass">
-    <h2>Начни с истории</h2>
-    <p class="muted sm">Подключи сервер в Настройках, история придёт сама. Или загрузи файл history.json.</p>
-    <div class="row"><button class="btn primary grow" data-act="tab" data-tab="settings">Подключить</button><button class="btn grow" data-act="imp">Файл</button></div></section>`;
+  // Новичка не встречаем серверами и файлами: перенос истории живёт в Настройках
+  const empty = db.sessions.length ? '' : '<p class="foot">Первая тренировка? Просто жми «Приступить» внизу. Историю с другого телефона можно перенести в Настройках.</p>';
   const items = db.plan.items;
   // Кнопка «Приступить» прилипает к низу экрана: видна сразу, как бы длинно ни вышел план
   const plan = `<section class="card glass plan">
@@ -759,7 +774,7 @@ function exercisePage() {
   const media = c ? `<section class="card glass media"><div class="anim"><img src="img/${c.img}-0.jpg" alt=""><img src="img/${c.img}-1.jpg" alt=""></div>
     <ul class="cues">${c.cues.map(x => `<li>${esc(x)}</li>`).join('')}</ul></section>` : '';
   const head = `${back()}<header class="hd"><h1 class="t2">${esc(ex)}</h1><p class="sub">${esc([KINDS[kind], ...(c?.muscles || [])].join(', '))}</p></header>`;
-  if (!h.length) return `${head}${media}<p class="muted pad">Ещё не делал</p>`;
+  if (!h.length) return `${head}${media}<p class="muted pad">Ещё не было</p>`;
   const best = h.reduce((a, x) => (val(x) > val(a) ? x : a));
   const e1 = Math.max(...h.map(x => x.e1));
   const series = [{ cls: 'l1', pts: h.map((x, i) => [i, val(x)]) }];
@@ -824,10 +839,14 @@ function sessionPage() {
     pulse = `<section class="card glass"><h3>Пульс</h3>
       ${chart({ series: [{ cls: 'hr', pts: s.hr.s }], thr, marks: s.sets.filter(x => x.t).map(x => (x.t - s.hr.t0) / 1000), axis: ['0 мин', `${Math.round(end / 60)} мин`] })}
       <p class="muted sm">Вертикальные линии: подходы. Пунктир: порог.</p></section>`;
-  } else if (s.rests?.length) {
+  } else if (s.rests?.length && db.sessions.some(x => x.hr)) {
     pulse = `<section class="card glass"><p class="muted sm">Пульса пока нет. Запусти команду «Трени пульс» и нажми кнопку.</p>
       <button class="btn primary wide" data-act="paste">Вставить пульс</button>
       <button class="link accent" data-act="guide" data-part="hr">Как собрать команду</button></section>`;
+  } else if (s.rests?.length) {
+    // Пульс ещё ни разу не вставляли (нет часов или не настроено): не спорим с главной кнопкой «Готово»
+    pulse = `<section class="card glass"><p class="muted sm">С Apple Watch сюда можно добавить пульс за тренировку.</p>
+      <div class="row"><button class="link accent" data-act="paste">Вставить пульс</button><button class="link accent" data-act="guide" data-part="hr">Как настроить</button></div></section>`;
   }
   const blocks = exs.map(ex => {
     const kind = kindOf(ex);
@@ -849,7 +868,8 @@ function sessionPage() {
   const end = view.fin === s.id
     ? '<button class="btn primary wide" data-act="tab" data-tab="today">Готово</button><button class="link danger" data-act="delsess">Удалить тренировку</button>'
     : '<button class="btn ghost wide danger" data-act="delsess">Удалить тренировку</button>';
-  return `${back()}<header class="hd"><p class="sub">${esc(sub)}</p><h1 class="t2">${esc(s.name || 'Тренировка')}</h1></header>
+  // На свежем итоге выход один, «Готово» внизу; «Назад» вёл бы в «Прогресс»
+  return `${view.fin === s.id ? '' : back()}<header class="hd"><p class="sub">${esc(sub)}</p><h1 class="t2">${esc(s.name || 'Тренировка')}</h1></header>
     ${summaryCard(s, k)}${pulse}${blocks}${end}`;
 }
 
@@ -1002,9 +1022,15 @@ const ACT = {
     ACT.pick(d);
     toast(`${d.ex}: ${where}`);
   },
-  back: () => { for (const k of ['sid', 'ex', 'prog', 'exl']) if (view[k]) return void delete view[k]; },
+  back: () => {
+    if (view.ex && view.prev) return void (view = view.prev); // история упражнения: туда, откуда пришёл
+    for (const k of ['sid', 'ex', 'prog', 'exl']) if (view[k]) return void delete view[k];
+  },
   seg: d => { view.seg = d.v; },
-  ex: d => { view = { tab: 'progress', seg: view.seg, ex: d.ex }; },
+  ex: d => {
+    const { sheet, ...prev } = view;
+    view = { tab: 'progress', seg: view.seg, ex: d.ex, prev: prev.tab === 'progress' ? null : prev };
+  },
   sess: d => { view.sid = d.id; },
   prog: d => { view.prog = d.id; },
   exl: () => { view.exl = true; },
@@ -1028,6 +1054,7 @@ const ACT = {
       else { list.push(it); a.cur = list.length - 1; }
       a.draft = draftFor(a.cur);
       delete view.fold;
+      delete view.edit;
     } else if (replace) list[S.i] = it;
     else list.push(it);
     delete view.sheet;
@@ -1057,7 +1084,7 @@ const ACT = {
   replan: () => {
     const old = db.plan;
     db.plan = buildPlan();
-    toast('Собрал заново', () => { db.plan = old; });
+    toast('Собрано заново', () => { db.plan = old; });
   },
   plandel: d => {
     const i = +d.i, items = db.plan.items, it = items.splice(i, 1)[0];
@@ -1073,12 +1100,17 @@ const ACT = {
     if (i !== a.cur) { a.cur = i; a.draft = draftFor(i); delete view.edit; }
   },
   fold: () => { view.fold = true; },
-  edit: () => { view.edit = !view.edit; },
+  edit: () => { view.edit = !$('.card.cur .steps'); }, // по экрану: цифры бывают открыты и без нажатия (нет веса)
   step: d => {
     const D = A().draft, inc = d.f === 'w' ? STEP[kindOf(curItem().ex)] : 1;
     D[d.f] = Math.max(0, Math.round((+D[d.f] + d.d * inc) * 100) / 100);
   },
-  warm: () => { A().draft.warm = !A().draft.warm; },
+  // Без разминки: рабочие цифры по подсказке, а не вес разминки (иначе все подходы выходили 20 × 12)
+  warm: () => {
+    const D = A().draft, it = curItem();
+    D.warm = !D.warm;
+    if (!D.warm) { D.w = suggest(lastOf(it.ex), it, kindOf(it.ex)).w ?? D.w; D.r = it.reps; }
+  },
   done: () => {
     const a = A(), it = curItem(), D = a.draft, t = Date.now();
     const set = { ex: it.ex, w: kindOf(it.ex) === 'bw' ? 0 : D.w, r: D.r, warm: D.warm, t };
@@ -1101,7 +1133,8 @@ const ACT = {
   },
   go: () => {
     const a = A();
-    if (a.ready) return void delete a.ready;
+    // Время тренировки с первого подхода: «Начинаем» могли оставить открытым со вчера
+    if (a.ready) { delete a.ready; a.startedAt = Date.now(); return; }
     delete view.fold;
     a.rests.push({ ...a.rest, end: Date.now() });
     a.rest = null;
@@ -1133,9 +1166,14 @@ const ACT = {
     lock?.release();
     view = { tab: 'progress', sid: s.id, fin: s.id };
     setTimeout(push, 0); // после save() в обработчике клика: итог тренировки сразу на сервер
-    const recs = sessionRecords(db.sessions.length - 1);
-    if (recs.length) setTimeout(() => celebrate('Тренировка закончена', `${plural(recs.length, 'Рекорд', 'Рекорда', 'Рекордов')}: ${recs.length}`), 300);
-    else toast('Сохранено. Дома запусти команду «Трени: пульс»');
+    // Салют за рекорды и за вехи (первая, 10-я, 25-я...): первая тренировка без истории рекордов не даёт
+    const n = db.sessions.length, recs = sessionRecords(n - 1);
+    const mile = n === 1 ? 'Первая тренировка!' : [10, 25, 50, 100, 200, 300].includes(n) ? `${n} тренировок!` : '';
+    const recText = recs.length ? `${plural(recs.length, 'Рекорд', 'Рекорда', 'Рекордов')}: ${recs.length}` : '';
+    if (mile || recs.length) setTimeout(() => celebrate(mile || 'Тренировка закончена', recText || (n === 1 ? 'Начало положено' : 'Так держать')), 300);
+    // Без GitHub всё живёт только на телефоне: раз в 5 тренировок напоминаем про бэкап
+    else if (!meta.token && n % 5 === 0) toast('Тренировка сохранена. Сохрани копию: Настройки, «Сохранить бэкап в файл»');
+    else toast(db.sessions.some(x => x.hr) ? 'Тренировка сохранена. Дома запусти команду «Трени пульс»' : 'Тренировка сохранена');
   },
 
   delsess: () => {
@@ -1198,13 +1236,18 @@ const ACT = {
 };
 
 // Действие вернуло false: ничего не поменялось, перерисовывать не надо
+// savedAt двигаем, только если данные правда поменялись: иначе вкладка или «Назад» на устаревшем телефоне
+// делают его «новее» сервера, и он затирает чужую тренировку. План на день свой у телефона: только локально
+const snap = () => JSON.stringify({ ...db, plan: null, savedAt: 0 });
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
   const fn = el && ACT[el.dataset.act];
   if (!fn) return;
+  const was = snap(), plan = JSON.stringify(db.plan);
   const r = fn(el.dataset);
   if (r === false || r instanceof Promise) return;
-  save();
+  if (snap() !== was) save();
+  else if (JSON.stringify(db.plan) !== plan) saveLocal();
   render();
 });
 
@@ -1276,7 +1319,8 @@ document.addEventListener('touchstart', e => {
 }, { passive: true });
 document.addEventListener('touchend', e => {
   const p = e.changedTouches[0];
-  if (edge && p.clientX - edge[0] > 70 && Math.abs(p.clientY - edge[1]) < 60) { ACT.back(); render(); }
+  // blur до ухода: иначе недописанное в поле не сохранится (change у удалённого поля не приходит или падает)
+  if (edge && p.clientX - edge[0] > 70 && Math.abs(p.clientY - edge[1]) < 60) { document.activeElement?.blur(); ACT.back(); render(); }
   edge = null;
 });
 
@@ -1294,7 +1338,13 @@ function render() {
   // Как в iOS: новый экран сверху, «Назад» туда, где был. Прокрутку запоминаем до подмены: короткий экран её обрежет
   if (changed) scrollAt[lastPage] = scrollY;
   app.innerHTML = pages[view.tab]();
-  if (changed) { app.classList.remove('enter'); void app.offsetWidth; app.classList.add('enter'); lastPage = page; scrollTo(0, scrollAt[page] || 0); }
+  if (changed) {
+    // Сдвиг страницы не под экраном отдыха и «Начинаем»: transform у main растягивает fixed-экран на всю страницу
+    app.classList.remove('enter');
+    if (!app.querySelector('.rest')) { void app.offsetWidth; app.classList.add('enter'); }
+    lastPage = page;
+    scrollTo(0, scrollAt[page] || 0);
+  }
   const sh = $('#sheet'), html = sheet(), opened = !sh.innerHTML && html;
   sh.innerHTML = html;
   sh.classList.toggle('in', !!opened);
