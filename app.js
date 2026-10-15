@@ -58,7 +58,12 @@ const nTrain = n => `${n} ${plural(n, 'тренировка', 'трениров�
 const kindOf = ex => { const k = db.exercises[ex]?.kind; return k && k !== '?' ? k : CAT[ex]?.kind ?? k ?? '?'; };
 const groupOf = ex => CAT[ex]?.group ?? db.exercises[ex]?.group;
 const muscleOf = ex => CAT[ex]?.muscle ?? groupOf(ex);
-const lastOf = ex => exerciseHistory(db.sessions, ex).at(-1);
+// Последняя тренировка с упражнением; prev: до трёх последних (с ней), для застоя и пульса в подсказке
+const lastOf = ex => {
+  const h = exerciseHistory(db.sessions, ex), last = h.at(-1);
+  if (last) last.prev = h.slice(-3);
+  return last;
+};
 const doneNames = () => [...new Set(db.sessions.flatMap(s => s.sets.map(x => x.ex)))];
 const allExercises = () => [...new Set([...CATALOG.map(c => c.name), ...Object.keys(db.exercises), ...doneNames()])]
   .sort((a, b) => a.localeCompare(b, 'ru'));
@@ -87,6 +92,11 @@ const fresh = () => ({
 });
 
 // ---------- данные: всё, что пришло из файла, с сервера или из памяти, приводим к ожидаемой форме ----------
+
+// Готовая программа для новичка: тренажёры, где сложно ошибиться в технике, и планка. Веса подбираются за 1-2 раза
+const STARTER = () => P('S', 'Новичку, всё тело', [['Жим ногами (тележка)', 3, 12], ['Тяга верхнего блока', 3, 12], ['Жим горизонт Хаммер', 3, 12],
+  ['Тяга нижнего блока', 3, 12], ['Обратная бабочка', 3, 12], ['Планка', 3, 30]]);
+const hasStarter = () => db.programs.some(p => p.id === 'S');
 
 const okSession = s => s && typeof s === 'object' && Array.isArray(s.sets) && s.sets.every(x => x && typeof x.ex === 'string');
 // Только приводим к числу то, что есть, ничего не дописываем: бэкап после круга импорт-экспорт не меняется
@@ -532,10 +542,13 @@ const mstep = (f, v, unit) => `<div class="mstep">
   <label><input data-last="${f}" inputmode="decimal" value="${fmtW(v)}"><small>${unit}</small></label>
   <button data-act="lstep" data-f="${f}" data-d="1" aria-label="больше">+</button></div>`;
 function lastSet(s) {
-  const kind = kindOf(s.ex), dur = s.st ? (s.t - s.st) / 1000 : 0;
+  const kind = kindOf(s.ex), dur = s.st && s.t - s.st >= 1000 ? (s.t - s.st) / 1000 : 0;
+  // «Как было?»: по нему следующая подсказка прибавляет два шага, один или ни одного. Не нажал: «Норм»
+  const feel = s.warm || kind === 'cardio' ? '' : `<div class="feel"><span class="muted sm">Как было?</span>${[['easy', 'Легко'], ['ok', 'Норм'], ['hard', 'Тяжело']]
+    .map(([v, t]) => `<button class="chip${(s.feel || 'ok') === v ? ' on' : ''}" data-act="feel" data-v="${v}">${t}</button>`).join('')}</div>`;
   return `<div class="lastset">
     <p class="muted sm">${s.warm ? 'Разминка сделана' : 'Подход сделан'}${dur ? ` за ${fmtSec(dur)}` : ''}. Вышло иначе? Поправь</p>
-    <div class="msteps">${noW(kind) ? '' : mstep('w', s.w, UNIT[kind] || 'кг')}${mstep('r', s.r, RUNIT[kind] || 'раз')}</div></div>`;
+    <div class="msteps">${noW(kind) ? '' : mstep('w', s.w, UNIT[kind] || 'кг')}${mstep('r', s.r, RUNIT[kind] || 'раз')}</div>${feel}</div>`;
 }
 
 function restOverlay(A) {
@@ -605,7 +618,8 @@ function planRow(it, i) {
 function todayPage() {
   ensurePlan();
   // Новичка не встречаем серверами и файлами: перенос истории живёт в Настройках
-  const empty = db.sessions.length ? '' : '<p class="foot">Первая тренировка? Просто жми «Приступить» внизу. Историю с другого телефона можно перенести в Настройках.</p>';
+  const empty = db.sessions.length ? '' : `<p class="foot">Первая тренировка? Просто жми «Приступить» внизу. Историю с другого телефона можно перенести в Настройках.</p>
+    ${hasStarter() ? '' : '<button class="link accent" data-act="starter">Или взять готовую программу для новичка</button>'}`;
   const items = db.plan.items;
   // Кнопка «Приступить» прилипает к низу экрана: видна сразу, как бы длинно ни вышел план
   const plan = `<section class="card glass plan">
@@ -962,7 +976,7 @@ function settingsPage() {
       <button class="btn primary wide" data-act="link">Подключить</button>`}
     </div>
     <h4 class="cap">Программы</h4>
-    <div class="group glass">${progs}<button class="li accent" data-act="newprog">Новая программа</button></div>
+    <div class="group glass">${progs}<button class="li accent" data-act="newprog">Новая программа</button>${hasStarter() ? '' : '<button class="li accent" data-act="starter">Добавить готовую: «Новичку, всё тело»</button>'}</div>
     <h4 class="cap">Упражнения</h4>
     <div class="group glass"><button class="li" data-act="exl"><span>Тип веса и свои упражнения</span><span class="muted">›</span></button></div>
     <h4 class="cap">Данные</h4>
@@ -1175,6 +1189,10 @@ const ACT = {
     delete view.edit;
     if (what) setTimeout(() => celebrate(recordText(what, kind), `${it.ex}: ${setText(set, kind)}`), 50);
   },
+  feel: d => {
+    const s = A().sets.at(-1);
+    if (d.v === 'ok') delete s.feel; else s.feel = d.v;
+  },
   // −/+ на экране отдыха: правим последний подход, рекорд и черновик следующего пересчитываются
   lstep: d => {
     const a = A(), s = a.sets.at(-1), kind = kindOf(s.ex), inc = d.f === 'w' ? STEP[kind] : rStep(kind);
@@ -1231,6 +1249,10 @@ const ACT = {
     if (!confirm('Удалить тренировку насовсем?')) return false;
     db.sessions = db.sessions.filter(s => s.id !== view.sid);
     delete view.sid;
+  },
+  starter: () => {
+    if (!hasStarter()) db.programs.push(STARTER());
+    toast('Программа «Новичку, всё тело» добавлена: она на «Сегодня»');
   },
   newprog: () => {
     const id = `p${Date.now()}`;

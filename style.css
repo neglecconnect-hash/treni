@@ -193,6 +193,10 @@ main:has(> .rest) .setbar b::before { animation: none; }
 .mstep input { width: 100%; text-align: center; background: none; border: 0; outline: none; font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; -webkit-user-select: text; user-select: text; }
 .mstep small { font-size: 11px; color: var(--muted); margin-top: -3px; }
 
+/* «Как было?» одной строкой под цифрами */
+.feel { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; }
+.feel .chip { min-height: 36px; padding: 6px 14px; }
+
 /* Полоска всей тренировки под заголовком */
 .bar { height: 6px; margin-top: 12px; border-radius: 3px; background: var(--fill); overflow: hidden; }
 .bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--ok)); box-shadow: 0 0 12px rgba(48, 209, 88, 0.5); }
@@ -321,9 +325,10 @@ textarea { margin: 8px 0; font-size: 16px; resize: vertical; }
   .rest .timer { font-size: 66px; }
   .rest .rest-h { font-size: 22px; }
   #ready-no { display: none; }
+  .rest:not(.intro) .anim.next { display: none; } /* на отдыхе следующее упражнение названо в «Дальше» */
 }
 .rest-h { font-size: 30px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--pulse); }
-.timer { position: relative; font-size: 104px; font-weight: 200; line-height: 1; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; transition: color 0.6s ease; }
+.timer { position: relative; font-size: 88px; font-weight: 200; line-height: 1; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; transition: color 0.6s ease; }
 .timer::before {
   content: ""; position: absolute; inset: -55% -15%; z-index: -1; border-radius: 50%;
   background: radial-gradient(closest-side, rgba(255, 55, 95, 0.5), transparent);
@@ -380,7 +385,7 @@ img.th.loaded, .anim img.loaded:first-child { opacity: 1; }
 .anim { position: relative; aspect-ratio: 3 / 2; overflow: hidden; border-radius: 18px; background: #111; }
 .anim img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .anim img + img { animation: frame 2.6s ease-in-out infinite; }
-.anim.next { width: min(72vw, 280px); max-height: 20dvh; margin-top: 4px; }
+.anim.next { width: min(72vw, 280px); max-height: 16dvh; margin-top: 4px; }
 @keyframes frame { 0%, 35% { opacity: 0; } 50%, 85% { opacity: 1; } 100% { opacity: 0; } }
 .cues { display: grid; gap: 6px; padding-left: 20px; font-size: 15px; }
 .cues li::marker { color: var(--accent-t); }

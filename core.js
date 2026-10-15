@@ -17,10 +17,12 @@ export const e1rm = (w, r) => (w > 0 && r > 0 && r <= 12 ? w * (1 + r / 30) : 0)
 export function workStats(sets) {
   const work = sets.filter(s => !s.warm && s.w != null);
   if (!work.length) return null;
-  const top = Math.max(...work.map(s => s.w));
+  const top = Math.max(...work.map(s => s.w)), tops = work.filter(s => s.w === top);
   return {
     top,
-    reps: work.filter(s => s.w === top).map(s => s.r),
+    reps: tops.map(s => s.r),
+    // «Как было?» с экрана отдыха по подходам с самым тяжёлым весом: хоть один тяжело, значит тяжело
+    feel: tops.some(s => s.feel === 'hard') ? 'hard' : tops.every(s => s.feel === 'easy') ? 'easy' : null,
     e1: Math.max(...work.map(s => e1rm(s.w, s.r))),
     tonnage: work.reduce((a, s) => a + s.w * (s.r || 0), 0),
   };
@@ -40,19 +42,39 @@ export const fmtSet = (x, kind) => (kind === 'time' ? x.reps.map(r => (r == null
   : kind === 'cardio' ? `${x.reps[0] ?? '?'} мин${x.top ? `, ${fmtW(x.top)} км` : ''}`
   : `${x.top ? fmtW(x.top) : 'свой вес'} × ${x.reps.map(r => r ?? '?').join('/')}`);
 
+const mean = a => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+
+// Пульс после упражнения падал до порога заметно (на 30%) дольше, чем в прошлые разы: восстановление хуже обычного
+function slowRest(tail, ex) {
+  const rec = e => mean((e.session?.rests || []).filter(r => r.ex === ex && r.toThr != null).map(r => r.toThr));
+  const now = rec(tail.at(-1)), before = mean(tail.slice(0, -1).map(rec).filter(v => v != null));
+  return now != null && before != null && now > 1.3 * before;
+}
+
 // Двойная прогрессия: все подходы с самым тяжёлым весом на целевые повторы, значит прибавляем шаг.
 // Сколько их было, не важно: «лесенка» 40/50/40 даёт один подход на 50, и это норма.
+// Подстройка под человека, по важности: застой (3 раза подряд не добрал: минус 10%), «Добей», «Было тяжело»,
+// пульс восстанавливался дольше обычного (закрепить), «Было легко» (два шага вместо одного).
+// last.prev: до трёх последних тренировок с упражнением, вместе с last (подкладывает приложение)
 export function suggest(last, item, kind) {
   if (!last) return { w: null, text: kind === 'time' ? 'Первый раз: держи, сколько получится' : kind === 'cardio' ? 'Первый раз: в своём темпе' : 'Первый раз: подбери рабочий вес' };
   const was = `Прошлый раз ${fmtSet(last, kind)}.`;
   if (kind === 'cardio') return { w: last.top, text: was };
-  const done = last.reps.length > 0 && last.reps.every(r => r != null && r >= item.reps);
-  if (!done) return { w: last.top, text: `${was} Добей ${item.sets} × ${kind === 'time' ? `${item.reps} сек` : item.reps}` };
-  if (kind === 'time') return { w: 0, text: `${was} Попробуй +5 секунд` };
-  if (kind === 'bw') return { w: last.top, text: `${was} Попробуй +1 повтор` };
-  if (kind === 'stack') return { w: last.top, text: `${was} Пора на следующую плитку` };
-  const w = last.top + (STEP[kind] ?? 2.5);
-  return { w, text: `${was} Попробуй ${fmtW(w)}` };
+  const reached = e => e.reps.length > 0 && e.reps.every(r => r != null && r >= item.reps);
+  const step = STEP[kind] ?? 2.5, heavy = kind !== 'bw' && kind !== 'time', tail = last.prev || [last];
+  if (heavy && tail.length >= 3 && tail.slice(-3).every(e => e.top === last.top && !reached(e))) {
+    const w = Math.max(step, Math.round((last.top * 0.9) / step) * step);
+    return { w, text: `${was} Третий раз не добирается: сними до ${fmtW(w)} и набери заново` };
+  }
+  if (!reached(last)) return { w: last.top, text: `${was} Добей ${item.sets} × ${kind === 'time' ? `${item.reps} сек` : item.reps}` };
+  if (last.feel === 'hard') return { w: last.top, text: `${was} Было тяжело: закрепи этот ${heavy ? 'вес' : 'результат'}` };
+  if (slowRest(tail, item.ex)) return { w: last.top, text: `${was} Пульс восстанавливался дольше обычного: закрепи` };
+  const k = last.feel === 'easy' ? 2 : 1, easy = k > 1 ? 'Было легко: ' : '';
+  if (kind === 'time') return { w: 0, text: `${was} ${easy}Попробуй +${5 * k} секунд` };
+  if (kind === 'bw') return { w: last.top, text: `${was} ${easy}Попробуй +${k} ${k > 1 ? 'повтора' : 'повтор'}` };
+  if (kind === 'stack') return { w: last.top, text: `${was} ${easy}${k > 1 ? 'Можно через плитку' : 'Пора на следующую плитку'}` };
+  const w = last.top + step * k;
+  return { w, text: `${was} ${easy}Попробуй ${fmtW(w)}` };
 }
 
 // Порог пульса: первая половина упражнений тренировки thr1, вторая thr2
