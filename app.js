@@ -181,7 +181,11 @@ function countUp() {
   }
 }
 
+// Экран держим всю тренировку, кроме кардио-подхода: телефон 20-40 минут в кармане, горящий экран садит батарею
+// и ловит нажатия ткани. Минуты всё равно считаются по меткам времени
+const cardioRun = () => { const a = db.active; return !!(a?.setStart && !a.rest && !a.ready && kindOf(a.items[a.cur]?.ex) === 'cardio'); };
 async function wake() {
+  if (cardioRun()) return void lock?.release().catch(() => {});
   try { lock = await navigator.wakeLock?.request('screen'); } catch {}
 }
 
@@ -1564,7 +1568,7 @@ document.addEventListener('focusin', e => {
 // Любое нажатие на тренировке: снова держим экран (iOS отпускает его при блокировке) и будим звук для сигнала на цели
 document.addEventListener('click', () => {
   if (ac && ac.state !== 'running') ac.resume().catch(() => {});
-  if (db.active && (!lock || lock.released)) wake();
+  if (db.active && (cardioRun() || !lock || lock.released)) wake(); // идёт после общего обработчика: подход уже начат или завершён
 });
 
 setInterval(tick, 500);
