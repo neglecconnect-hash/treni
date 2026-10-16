@@ -372,6 +372,8 @@ textarea { margin: 8px 0; font-size: 16px; resize: vertical; }
 /* Прячем сразу, возвращаем с задержкой: иначе нажатие на кнопку под полем снимает фокус,
    меню встаёт на место кнопки и забирает отпускание пальца */
 body:has(:is(input, textarea, select):focus) .tabs { visibility: hidden; transition: none; }
+/* Досдвиг вниз, если iOS после клавиатуры держит низ экрана выше (pinTabs в app.js) */
+.tabs, .toast, #sheet .sheet { translate: 0 var(--vvfix, 0px); }
 .tabs button { display: grid; justify-items: center; gap: 1px; padding: 6px 12px; border-radius: 999px; font-size: 11px; font-weight: 500; color: var(--muted); }
 .tabs button.on { color: var(--text); background: rgba(255, 255, 255, 0.13); }
 .tabs svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
@@ -384,7 +386,7 @@ body:has(:is(input, textarea, select):focus) .tabs { visibility: hidden; transit
 }
 /* На карточке упражнения и «Начинаем» внизу главная кнопка: тост «Вернуть» сверху, чтобы не ловить её нажатия.
    На отдыхе внизу, как везде: сверху там салют рекорда */
-body.working:not(:has(.rest:not(.intro))) .toast { top: calc(env(safe-area-inset-top) + 8px); bottom: auto; }
+body.working:not(:has(.rest:not(.intro))) .toast { top: calc(env(safe-area-inset-top) + 8px); bottom: auto; translate: none; }
 .undo { flex: none; min-height: 44px; padding: 0 14px; margin: -10px -10px -10px 0; font-weight: 600; color: var(--accent-t); }
 
 #err {

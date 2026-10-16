@@ -1636,6 +1636,19 @@ document.addEventListener('focusin', e => {
   const t = e.target;
   if (t.matches('[data-in], [data-last], .num-in, .pi-n input')) setTimeout(() => t.setSelectionRange(0, t.value.length), 50);
 });
+// iOS 26-27 (WebKit 297779): после клавиатуры fixed-слой бывает урезан, и меню висит посреди экрана на любой вкладке.
+// Меряем, где меню на деле, и досдвигаем вниз (--vvfix, им же тост и шторку). Без бага сдвиг 0
+let vvFix = 0;
+function pinTabs() {
+  if (document.activeElement?.matches('input, textarea, select')) return; // клавиатура открыта, меню и так спрятано
+  const tabs = $('#tabs'), want = innerHeight - parseFloat(getComputedStyle(tabs).bottom);
+  const d = Math.max(0, Math.round(vvFix + want - tabs.getBoundingClientRect().bottom));
+  if (d !== vvFix) document.documentElement.style.setProperty('--vvfix', `${(vvFix = d)}px`);
+}
+addEventListener('scroll', pinTabs, { passive: true });
+addEventListener('resize', pinTabs);
+window.visualViewport?.addEventListener('resize', pinTabs);
+document.addEventListener('focusout', () => setTimeout(pinTabs, 500)); // после того, как клавиатура уехала
 
 // Любое нажатие на тренировке: снова держим экран (iOS отпускает его при блокировке) и будим звук для сигнала на цели
 document.addEventListener('click', () => {
