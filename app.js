@@ -1532,19 +1532,23 @@ document.addEventListener('pointerdown', e => {
 
 // ---------- отрисовка ----------
 
-// Экран отдыха не пересоздаём: иначе каждое −/+ заново проигрывает его появление (экран моргает), фото и свечение таймера.
-// Подменяем только поменявшиеся строки. Сравниваем с прошлой разметкой, а не с живым DOM: таймер тикает сам
-let restHtml = [];
-function keepRest(app, old) {
-  const neu = app.querySelector(':scope > .rest');
-  if (!neu) return;
-  const kids = [...neu.children], html = kids.map(e => e.outerHTML);
-  if (old && old.className === neu.className) {
-    if (html.length === restHtml.length) kids.forEach((e, i) => { if (html[i] !== restHtml[i]) old.children[i].replaceWith(e); });
-    else old.replaceChildren(...kids);
-    neu.replaceWith(old);
-  }
-  restHtml = html;
+// Перерисовка того же экрана правит DOM на месте, а не пересоздаёт его. Иначе на iPhone каждое −/+ пересоздаёт стеклянные
+// карточки и экран отдыха: backdrop-filter на кадр пропадает, анимации и фото начинаются заново, экран моргает.
+// Узлы сопоставляются по порядку; другой тег или другое фото: узел заменяется целиком. Новый экран рисуется с нуля
+function morph(from, to) {
+  if (from.nodeName !== to.nodeName || (from.nodeName === 'IMG' && from.getAttribute('src') !== to.getAttribute('src'))) return void from.replaceWith(to);
+  if (from.nodeType === 3 || from.nodeType === 8) { if (from.data !== to.data) from.data = to.data; return; }
+  if (from.nodeName === 'IMG' && from.classList.contains('loaded')) to.classList.add('loaded'); // уже проявившееся фото не гасим
+  for (const { name } of [...from.attributes]) if (!to.hasAttribute(name)) from.removeAttribute(name);
+  for (const { name, value } of to.attributes) if (from.getAttribute(name) !== value) from.setAttribute(name, value);
+  morphKids(from, to);
+  // Атрибут value не меняет уже набранное: значение полю ставим само, кроме поля, где сейчас печатают
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(from.nodeName) && from.type !== 'file' && from !== document.activeElement && from.value !== to.value) from.value = to.value;
+}
+function morphKids(from, to) {
+  const a = [...from.childNodes], b = [...to.childNodes];
+  b.forEach((n, i) => (a[i] ? morph(a[i], n) : from.append(n)));
+  a.slice(b.length).forEach(n => n.remove());
 }
 
 function render() {
@@ -1558,9 +1562,9 @@ function render() {
   const changed = page !== lastPage;
   // Как в iOS: новый экран сверху, «Назад» туда, где был. Прокрутку запоминаем до подмены: короткий экран её обрежет
   if (changed) scrollAt[lastPage] = scrollY;
-  const oldRest = app.querySelector(':scope > .rest');
-  app.innerHTML = pages[view.tab]();
-  keepRest(app, oldRest);
+  const markup = pages[view.tab]();
+  if (changed) app.innerHTML = markup;
+  else { const t = document.createElement('template'); t.innerHTML = markup; morphKids(app, t.content); }
   if (changed) {
     // Сдвиг страницы не под экраном отдыха и «Начинаем»: transform у main растягивает fixed-экран на всю страницу
     app.classList.remove('enter');
