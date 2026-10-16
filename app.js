@@ -15,12 +15,13 @@ const ICON_UP = '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>';
 const ICON_X = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const ICON_SWAP = '<svg viewBox="0 0 24 24"><path d="M5 8h13l-3.5-3.5M19 16H6l3.5 3.5"/></svg>';
 const ICON_OK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const ICON_GRIP = '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>';
 const CAT = Object.fromEntries(CATALOG.map(c => [c.name, c]));
 const II = icon => `<span class="ii">${icon}</span>`;
 
 // Мини-гайд: [заголовок, текст с разметкой]. Тексты для человека в зале: коротко, без терминов
 const GUIDE_USE = [
-  ['Сегодня', `Приложение само собирает тренировку из упражнений, которых давно не было. Не хочешь упражнение: ${II(ICON_SWAP)} заменит на похожее, ${II(ICON_X)} уберёт. Потом «Приступить»: покажет первое упражнение и как его делать, жми «Начать подход».`],
+  ['Сегодня', `Приложение само собирает тренировку из упражнений, которых давно не было. Порядок меняется пальцем за ${II(ICON_GRIP)}. Не хочешь упражнение: ${II(ICON_SWAP)} заменит на похожее, ${II(ICON_X)} уберёт. Потом «Приступить»: покажет первое упражнение и как его делать, жми «Начать подход». Хочешь начать с другого: там же «Начать с другого».`],
   ['Подход', 'Подходы идут списком, текущий подсвечен синим, вес и повторы уже стоят по плану. «Начать подход» запускает таймер подхода. Закончишь, жми «Завершить подход»: строка позеленеет, начнётся отдых. Вышло иначе: поправь цифры прямо на экране отдыха. Хочешь другой вес заранее: нажми на синюю строку, там же кнопка «Разминка».'],
   ['Отдых', 'На часах запусти «Тренировка», «Силовая» и смотри на пульс. Упал ниже порога (110 в начале, 115 ближе к концу): жми «Начать подход». Таймер зеленеет, когда в прошлый раз уже было пора.'],
   ['Ошибка в цифрах', 'На экране отдыха поправь вес и повторы кнопками − и +. Или нажми на зелёный подход в списке: он удалится, а внизу будет «Вернуть».'],
@@ -572,7 +573,8 @@ function readyOverlay(A) {
     ${media}<p class="h2">${esc(it.ex)}</p>
     <p class="next">${kind === 'cardio' ? `План: ${esc(it.reps)} мин` : `${D.warm ? 'Разминка' : `Подход 1 из ${esc(it.sets)}`}: ${askW ? `${esc(it.reps)} раз, вес выбери на месте, начни с лёгкого` : setLong(D, kind)}`}</p>
     ${c ? `<ul class="cues">${c.cues.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-    <button class="link accent" data-act="swap" data-ctx="work" data-i="${A.cur}">Занято или не подходит? Заменить</button>
+    <div class="row links"><button class="link accent" data-act="swap" data-ctx="work" data-i="${A.cur}">Занято? Заменить</button>
+      ${A.items.length > 1 ? '<button class="link accent" data-act="pickfirst">Начать с другого</button>' : ''}</div>
     <p class="muted sm tip">Кнопка запустит таймер подхода. Закончишь, жми «Завершить подход», потом будет отдых</p>
     <button class="btn primary xl" data-act="go">Начать подход</button>
     <button class="link" data-act="finish">Отменить</button></div>`;
@@ -670,7 +672,8 @@ function planRow(it, i) {
   return `<div class="pl">${thumb(it.ex)}
     <button class="txt" data-act="info" data-ex="${esc(it.ex)}"><b>${esc(it.ex)}</b><small class="muted">${esc(sub)}</small></button>
     <button class="ic" data-act="swap" data-ctx="plan" data-i="${i}" aria-label="заменить">${ICON_SWAP}</button>
-    <button class="ic" data-act="plandel" data-i="${i}" aria-label="убрать">${ICON_X}</button></div>`;
+    <button class="ic" data-act="plandel" data-i="${i}" aria-label="убрать">${ICON_X}</button>
+    <span class="grip" aria-label="потяни, чтобы поменять порядок">${ICON_GRIP}</span></div>`;
 }
 
 function todayPage() {
@@ -683,7 +686,7 @@ function todayPage() {
     <h2>Тренировка на сегодня</h2>
     <p class="muted sm">${esc(planName(items))}. ${items.length} ${plural(items.length, 'упражнение', 'упражнения', 'упражнений')}</p>
     <div class="plist">${items.map(planRow).join('')}</div>
-    <p class="muted sm">Не хочешь упражнение: ${II(ICON_SWAP)} заменит на похожее, ${II(ICON_X)} уберёт</p>
+    <p class="muted sm">Порядок: потяни за ${II(ICON_GRIP)}. Не хочешь упражнение: ${II(ICON_SWAP)} заменит на похожее, ${II(ICON_X)} уберёт</p>
     <div class="row"><button class="link accent" data-act="add" data-ctx="plan">Добавить упражнение</button><button class="link" data-act="replan">Собрать заново</button></div>
     <button class="btn primary wide go-btn" data-act="startplan"${items.length ? '' : ' disabled'}>Приступить</button></section>`;
   const progs = db.programs.map(p => `<button class="li" data-act="start" data-id="${esc(p.id)}">
@@ -798,6 +801,13 @@ function guideSheet(S) {
     <button class="btn primary wide" data-act="close">Понятно</button>`;
 }
 
+// «Начинаем»: с какого упражнения начать. Выбранное встаёт первым, остальные идут за ним в прежнем порядке
+function firstSheet() {
+  const A = db.active;
+  return `<h2>С чего начать</h2>
+    <div class="group glass">${A.items.filter((it, i) => i !== A.cur).map(it => pickRow(it.ex, 'setfirst')).join('')}</div>`;
+}
+
 function conflictSheet() {
   const n = remoteOffer.sessions.length, m = db.sessions.length;
   return `<h2>Чьи данные оставить?</h2>
@@ -810,7 +820,7 @@ function conflictSheet() {
 function sheet() {
   const S = view.sheet;
   if (!S) return '';
-  const body = { info: infoSheet, swap: swapSheet, add: addSheet, conflict: conflictSheet, guide: guideSheet }[S.t](S);
+  const body = { info: infoSheet, swap: swapSheet, add: addSheet, conflict: conflictSheet, guide: guideSheet, first: firstSheet }[S.t](S);
   return `<div class="sheet-bg" data-act="close"></div>
     <div class="sheet glass" role="dialog"><div class="grab"></div><button class="close ic" data-act="close" aria-label="закрыть">${ICON_X}</button>${body}</div>`;
 }
@@ -1159,6 +1169,14 @@ const ACT = {
   gpart: d => { view.sheet.part = d.v; },
   guideok: () => { db.settings.guideSeen = Date.now(); },
   swap: d => { view.sheet = { t: 'swap', ctx: d.ctx, i: +d.i }; },
+  pickfirst: () => { view.sheet = { t: 'first' }; },
+  setfirst: d => {
+    const a = A(), i = a.items.findIndex(x => x.ex === d.ex);
+    a.items.unshift(a.items.splice(i, 1)[0]);
+    a.cur = 0;
+    a.draft = draftFor(0);
+    delete view.sheet;
+  },
   add: d => { view.sheet = { t: 'add', ctx: d.ctx, i: +d.i, swap: !!d.swap }; },
   grp: d => { view.sheet.g = d.g; },
   close: () => closeSheet(),
@@ -1479,7 +1497,55 @@ document.addEventListener('touchend', e => {
   edge = null;
 });
 
+// План на сегодня: строку тянут за ≡, соседние расступаются, отпустил: новый порядок. Жест ловит только ручка
+// (у неё touch-action: none), остальная карточка прокручивается как обычно.
+// ponytail: без автопрокрутки у края экрана, план в 5-7 строк виден целиком; добавить, если планы станут длиннее
+document.addEventListener('pointerdown', e => {
+  const h = e.target.closest('.pl .grip');
+  if (!h || !db.plan) return;
+  e.preventDefault();
+  const row = h.closest('.pl'), rows = [...row.parentElement.children], from = rows.indexOf(row);
+  const rs = rows.map(r => r.getBoundingClientRect()), shift = rs[from].height, y0 = e.clientY;
+  let to = from;
+  h.setPointerCapture(e.pointerId);
+  row.classList.add('drag');
+  const move = ev => {
+    const dy = ev.clientY - y0, mid = rs[from].top + rs[from].height / 2 + dy;
+    row.style.transform = `translateY(${dy}px)`;
+    to = rs.filter((r, k) => k !== from && r.top + r.height / 2 < mid).length;
+    rows.forEach((r, k) => {
+      if (k !== from) r.style.transform = k > from && k <= to ? `translateY(${-shift}px)` : k < from && k >= to ? `translateY(${shift}px)` : '';
+    });
+  };
+  const up = () => {
+    h.removeEventListener('pointermove', move);
+    h.removeEventListener('pointerup', up);
+    h.removeEventListener('pointercancel', up);
+    const it = db.plan.items;
+    if (to !== from) { it.splice(to, 0, it.splice(from, 1)[0]); saveLocal(); } // план телефонный: savedAt не трогаем
+    render();
+  };
+  h.addEventListener('pointermove', move);
+  h.addEventListener('pointerup', up);
+  h.addEventListener('pointercancel', up);
+});
+
 // ---------- отрисовка ----------
+
+// Экран отдыха не пересоздаём: иначе каждое −/+ заново проигрывает его появление (экран моргает), фото и свечение таймера.
+// Подменяем только поменявшиеся строки. Сравниваем с прошлой разметкой, а не с живым DOM: таймер тикает сам
+let restHtml = [];
+function keepRest(app, old) {
+  const neu = app.querySelector(':scope > .rest');
+  if (!neu) return;
+  const kids = [...neu.children], html = kids.map(e => e.outerHTML);
+  if (old && old.className === neu.className) {
+    if (html.length === restHtml.length) kids.forEach((e, i) => { if (html[i] !== restHtml[i]) old.children[i].replaceWith(e); });
+    else old.replaceChildren(...kids);
+    neu.replaceWith(old);
+  }
+  restHtml = html;
+}
 
 function render() {
   const pages = {
@@ -1492,7 +1558,9 @@ function render() {
   const changed = page !== lastPage;
   // Как в iOS: новый экран сверху, «Назад» туда, где был. Прокрутку запоминаем до подмены: короткий экран её обрежет
   if (changed) scrollAt[lastPage] = scrollY;
+  const oldRest = app.querySelector(':scope > .rest');
   app.innerHTML = pages[view.tab]();
+  keepRest(app, oldRest);
   if (changed) {
     // Сдвиг страницы не под экраном отдыха и «Начинаем»: transform у main растягивает fixed-экран на всю страницу
     app.classList.remove('enter');
