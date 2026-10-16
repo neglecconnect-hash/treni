@@ -174,7 +174,7 @@ button:disabled { opacity: 0.4; }
 .set.warm .sn, .set .wl { color: var(--warn); }
 .set .wl { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
 /* Под отдыхом и «Начинаем» мерцание стоит: тень плюс размытие поверх каждый кадр съедают батарею */
-main:has(> .rest) .set.now { animation: none; }
+main:has(> .rest) .set.now, .card.cur:has(.setbar) .set.now { animation: none; } /* и пока идёт подход: телефон в кармане */
 @keyframes now { 50% { box-shadow: inset 0 0 0 1.5px rgba(10, 132, 255, 0.75), 0 0 22px rgba(10, 132, 255, 0.35); } }
 
 /* Идёт подход: что за подход и его таймер, точка пульсирует, пока таймер идёт */
@@ -187,6 +187,9 @@ main:has(> .rest) .setbar b::before { animation: none; }
 
 /* «Завершить подход» прилипает к низу над меню: на SE с открытыми цифрами она иначе уходит под меню */
 .donerow { position: sticky; z-index: 3; bottom: calc(env(safe-area-inset-bottom) + 84px); }
+/* С открытыми цифрами не прилипает: иначе лежит поверх −/+ и забирает их нажатия. Видимой её держит прокрутка к .swapl */
+.card.cur:has(.steps) .donerow { position: static; }
+.swapl { scroll-margin-bottom: calc(env(safe-area-inset-bottom) + 84px); }
 .donerow .toggle { background: rgba(28, 28, 30, 0.92); }
 /* Кардио на отдыхе: поле км подсвечено, его надо вписать */
 .lastset.ask .mstep:first-child { border-color: rgba(10, 132, 255, 0.75); box-shadow: 0 0 0 1px rgba(10, 132, 255, 0.35); }
@@ -203,7 +206,8 @@ main:has(> .rest) .setbar b::before { animation: none; }
 
 /* «Как было?» одной строкой под цифрами */
 .feel { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; }
-.feel .chip { min-height: 36px; padding: 6px 14px; }
+.feel .chip { position: relative; min-height: 36px; padding: 6px 14px; }
+.feel .chip::after { content: ""; position: absolute; inset: -4px 0; } /* нажимается 44 px, а экран отдыха не растёт */
 
 /* Полоска всей тренировки под заголовком */
 .bar { height: 6px; margin-top: 12px; border-radius: 3px; background: var(--fill); overflow: hidden; }
@@ -334,6 +338,12 @@ textarea { margin: 8px 0; font-size: 16px; resize: vertical; }
   .rest .rest-h { font-size: 22px; }
   .rest:not(.intro) .anim.next { display: none; } /* на отдыхе следующее упражнение названо в «Дальше» */
 }
+/* Обычные iPhone (mini, 12-16): отдых перед новым упражнением с «Как было?» и фото иначе уводит «Начать подход» за край */
+@media (min-height: 701px) and (max-height: 900px) {
+  .rest { gap: 8px; }
+  .rest .timer { font-size: 64px; }
+  .rest:not(.intro) .anim.next { max-height: 11dvh; }
+}
 .rest-h { font-size: 30px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--pulse); }
 .timer { position: relative; font-size: 88px; font-weight: 200; line-height: 1; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; transition: color 0.6s ease; }
 .timer::before {
@@ -372,6 +382,9 @@ body:has(:is(input, textarea, select):focus) .tabs { visibility: hidden; transit
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   animation: rise 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+/* На карточке упражнения внизу прилипшая «Завершить подход»: тост «Вернуть» сверху, чтобы не ловить её нажатия.
+   На отдыхе внизу, как везде: сверху там салют рекорда */
+body.working:not(:has(.rest)) .toast { top: calc(env(safe-area-inset-top) + 8px); bottom: auto; }
 .undo { flex: none; min-height: 44px; padding: 0 14px; margin: -10px -10px -10px 0; font-weight: 600; color: var(--accent-t); }
 
 #err {

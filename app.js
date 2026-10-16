@@ -488,7 +488,7 @@ function startWith(name, program, items) {
 
 const stepper = (f, v, unit) => `<div class="step">
   <button data-act="step" data-f="${f}" data-d="-1" aria-label="меньше">−</button>
-  <label><input data-in="${f}" inputmode="decimal" value="${fmtW(v)}"><small>${unit}</small></label>
+  <label><input data-in="${f}" inputmode="${f === 'w' ? 'decimal' : 'numeric'}" value="${fmtW(v)}"><small>${unit}</small></label>
   <button data-act="step" data-f="${f}" data-d="1" aria-label="больше">+</button></div>`;
 
 function workoutPage() {
@@ -577,7 +577,7 @@ function readyOverlay(A) {
 // Сделанный подход на экране отдыха: цифры по плану, −/+ если вышло иначе (руки на отдыхе свободны)
 const mstep = (f, v, unit) => `<div class="mstep">
   <button data-act="lstep" data-f="${f}" data-d="-1" aria-label="меньше">−</button>
-  <label><input data-last="${f}" inputmode="decimal" value="${fmtW(v)}"><small>${unit}</small></label>
+  <label><input data-last="${f}" inputmode="${f === 'w' ? 'decimal' : 'numeric'}" value="${fmtW(v)}"><small>${unit}</small></label>
   <button data-act="lstep" data-f="${f}" data-d="1" aria-label="больше">+</button></div>`;
 function lastSet(s, A) {
   const kind = kindOf(s.ex), dur = s.st && s.t - s.st >= 1000 ? (s.t - s.st) / 1000 : 0;
@@ -1221,7 +1221,10 @@ const ACT = {
     a.cur = i; a.draft = draftFor(i); delete view.edit; startSet(a);
   },
   fold: () => { view.fold = true; },
-  edit: () => { view.edit = !$('.card.cur .steps'); }, // по экрану: цифры бывают открыты и без нажатия (нет веса)
+  edit: () => { // по экрану: цифры бывают открыты и без нажатия (нет веса)
+    view.edit = !$('.card.cur .steps');
+    if (view.edit) setTimeout(() => $('.card.cur .swapl')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+  },
   step: d => {
     const D = A().draft, kind = kindOf(curItem().ex), inc = d.f === 'w' ? STEP[kind] : rStep(kind);
     D[d.f] = Math.max(0, Math.round((+D[d.f] + d.d * inc) * 100) / 100);
@@ -1284,15 +1287,17 @@ const ACT = {
   finish: () => {
     const a = A();
     // Идёт подход (дорожку забыли «Завершить»): спрашиваем, записать ли его, а не теряем молча
+    // Один вопрос: «Отменить» на двух подряд читалось как «не заканчивать», и дорожка пропадала
     const run = !a.rest && !a.ready && a.setStart ? Date.now() - a.setStart : 0;
-    if (run > 20000 && confirm(`Подход ещё идёт, ${fmtSec(run / 1000)}. Записать его?`)) ACT.done();
-    if (!a.sets.length) {
+    if (run > 20000) {
+      if (!confirm(`Подход ещё идёт, ${fmtSec(run / 1000)}. Записать его и закончить тренировку?`)) return false;
+      ACT.done();
+    } else if (!a.sets.length) {
       if (!confirm('Подходов нет. Отменить тренировку?')) return false;
       db.active = null;
       lock?.release();
       return;
-    }
-    if (!confirm('Закончить тренировку?')) return false;
+    } else if (!confirm('Закончить тренировку?')) return false;
     const date = isoDay(a.startedAt);
     // Копии массивов: отложенные «Вернуть» и прочие ссылки на тренировку не должны менять историю
     const s = { id: `s${a.startedAt}`, date, label: dayLabel(date), program: a.program, name: a.name,
@@ -1501,8 +1506,12 @@ function render() {
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === view.tab));
   if (changed) countUp();
   // После «Иду» текущая карточка в центре экрана, а не уехавшая за меню
-  const cur = db.active && !db.active.rest && view.tab === 'today' ? db.active.cur : null;
-  if (cur != null && cur !== lastCur) $('.card.cur')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  const cur = db.active && !db.active.rest && !db.active.ready && view.tab === 'today' ? db.active.cur : null; // под «Начинаем» рано: потом появится строка таймера
+  // С открытыми цифрами «Завершить подход» не прилипает: тогда прокрутка до низа карточки, чтобы её было видно над меню
+  if (cur != null && cur !== lastCur) {
+    const open = !!$('.card.cur .steps');
+    $(open ? '.card.cur .swapl' : '.card.cur')?.scrollIntoView({ block: open ? 'end' : 'center', behavior: 'smooth' });
+  }
   lastCur = cur;
   tick();
 }
@@ -1550,6 +1559,12 @@ document.addEventListener('load', e => e.target.tagName === 'IMG' && e.target.cl
 document.addEventListener('focusin', e => {
   const t = e.target;
   if (t.matches('[data-in], [data-last], .num-in, .pi-n input')) setTimeout(() => t.setSelectionRange(0, t.value.length), 50);
+});
+
+// Любое нажатие на тренировке: снова держим экран (iOS отпускает его при блокировке) и будим звук для сигнала на цели
+document.addEventListener('click', () => {
+  if (ac && ac.state !== 'running') ac.resume().catch(() => {});
+  if (db.active && (!lock || lock.released)) wake();
 });
 
 setInterval(tick, 500);
