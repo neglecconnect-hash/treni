@@ -1,5 +1,5 @@
 // Интерфейс. Расчёты в core.js, каталог в catalog.js, все данные одним JSON в localStorage.
-import { STEP, fmtW, fmtSec, exerciseHistory, fmtSet, suggest, thrFor, parseHR, attachHR } from './core.js';
+import { STEP, fmtW, fmtSec, exerciseHistory, fmtSet, suggest, thrFor, parseHR, attachHR, workStats } from './core.js';
 import { GROUPS, CATALOG } from './catalog.js';
 
 const KEY = 'treni';
@@ -97,6 +97,7 @@ const fresh = () => ({
 const STARTER = () => P('S', 'Новичку, всё тело', [['Жим ногами (тележка)', 3, 12], ['Тяга верхнего блока', 3, 12], ['Жим горизонт Хаммер', 3, 12],
   ['Тяга нижнего блока', 3, 12], ['Обратная бабочка', 3, 12], ['Планка', 3, 30]]);
 const hasStarter = () => db.programs.some(p => p.id === 'S');
+const hasHR = () => db.sessions.some(s => s.hr); // пульс хоть раз вставляли: значит, часы есть
 
 const okSession = s => s && typeof s === 'object' && Array.isArray(s.sets) && s.sets.every(x => x && typeof x.ex === 'string');
 // Только приводим к числу то, что есть, ничего не дописываем: бэкап после круга импорт-экспорт не меняется
@@ -368,6 +369,8 @@ function celebrate(title, text) {
 // В каждом слоте упражнение из привычных (2+ раза, до 90 дней до последней тренировки), которое делал давнее всего:
 // так упражнения чередуются, разовые пробы не всплывают, а после долгого перерыва не всплывает давно брошенное.
 function buildPlan() {
+  // Истории нет (новичок): план на сегодня = готовая программа на тренажёрах, а не первые упражнения каталога со штангой
+  if (!db.sessions.length) return { date: isoDay(Date.now()), items: STARTER().items };
   const st = {};
   db.sessions.forEach((s, i) => {
     for (const ex of new Set(s.sets.filter(x => !x.warm).map(x => x.ex))) {
@@ -419,9 +422,40 @@ function draftFor(i) {
   const done = A.sets.filter(s => s.ex === it.ex), d = done.at(-1);
   const prevS = [...db.sessions].reverse().find(s => s.sets.some(x => x.ex === it.ex));
   const p = prevS?.sets.filter(x => x.ex === it.ex)[done.length];
+  const kind = kindOf(it.ex);
+  // Кардио: км не тащим с прошлого раза (иначе дистанция молча повторится), их вписывают на отдыхе
+  if (kind === 'cardio') return { w: 0, r: it.reps, warm: false };
   if (p?.warm && !(d && !d.warm)) return { w: p.w ?? 0, r: p.r ?? it.reps, warm: true };
-  if (d && !d.warm) return { w: d.w, r: d.r, warm: false };
-  return { w: suggest(lastOf(it.ex), it, kindOf(it.ex)).w ?? 0, r: it.reps, warm: false };
+  // Планка: цель следующего подхода по плану, а не сколько вышло в прошлом
+  if (d && !d.warm) return { w: d.w, r: kind === 'time' ? it.reps : d.r, warm: false };
+  return { w: suggest(lastOf(it.ex), it, kind).w ?? 0, r: it.reps, warm: false };
+}
+
+// Все рабочие подходы по плану сделаны
+const allDone = a => a.items.every(i => a.sets.filter(s => s.ex === i.ex && !s.warm).length >= i.sets);
+
+// Таймер подхода. Планка: 5 секунд «приготовься», чтобы дойти до коврика, а не записать это в удержание
+function startSet(a) {
+  const kind = kindOf(a.items[a.cur]?.ex);
+  a.setStart = Date.now() + (kind === 'time' ? 5000 : 0);
+  if (kind === 'time' || kind === 'cardio') unlockAudio(); // звук iOS разрешает только из нажатия
+}
+
+// Короткий сигнал, когда цель планки или кардио взята. В беззвучном режиме iPhone его не слышно, остаётся зелёный цвет
+let ac = null, beeped = 0;
+function unlockAudio() {
+  try { ac ||= new (window.AudioContext || window.webkitAudioContext)(); ac.resume(); } catch { ac = null; }
+}
+function beep() {
+  try {
+    const o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime;
+    o.frequency.value = 880;
+    g.gain.setValueAtTime(0.25, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    o.connect(g).connect(ac.destination);
+    o.start(t);
+    o.stop(t + 0.5);
+  } catch {}
 }
 
 // Следующее упражнение, где ещё не все рабочие подходы: сначала ниже по списку, потом пропущенные выше
@@ -434,10 +468,13 @@ function nextIdx(A) {
 function guessItem(ex) {
   const h = lastOf(ex), kind = kindOf(ex);
   // Кардио одним заходом, минут как в прошлый раз или 10; планка 3 × 30 сек для начала
+  // Подходов 3-5: в истории бывали тренировки по 6 подходов одного упражнения, это не план на сегодня
+  const sets = Math.min(5, Math.max(3, h?.reps.length ?? 0));
   if (kind === 'cardio') return { ex, sets: 1, reps: h?.reps[0] || 10 };
-  if (kind === 'time') return { ex, sets: Math.max(3, h?.reps.length ?? 0), reps: h ? Math.max(...h.reps.filter(Boolean), 15) : 30 };
+  // Планка: цель по худшему подходу прошлого раза, иначе «Цель» почти никогда не берётся (секунды всегда разные)
+  if (kind === 'time') return { ex, sets, reps: h ? Math.max(15, Math.min(...h.reps.filter(Boolean))) : 30 };
   const reps = h ? Math.max(8, ...h.reps.filter(Boolean)) : CAT[ex]?.mech === 'isolation' ? 12 : 8;
-  return { ex, sets: Math.max(3, h?.reps.length ?? 0), reps };
+  return { ex, sets, reps };
 }
 
 function startWith(name, program, items) {
@@ -482,7 +519,8 @@ function workoutPage() {
       <button class="sv${s.pr ? ' pr' : ''}" data-act="delset" data-k="${s.k}">${s.pr ? '★ ' : ''}${setText(s, kind)}</button>${wl(s)}<span class="sc">${ICON_OK}</span></div>`);
     // Цифры спрятаны, пока всё по плану: новичка поля сбивают («настрой и начни»). Строка и ссылка под списком
     // открывают и закрывают их на одном месте. Веса ещё не было никогда: открыты сразу, иначе запишется 0 кг
-    const needW = isWeight(kind) && sg.w == null && !D.warm && !done.some(s => !s.warm);
+    // То же, когда подсказка просит плитку тяжелее: вес новой плитки знает только тренажёр
+    const needW = isWeight(kind) && (sg.w == null || sg.ask) && !D.warm && !done.some(s => !s.warm);
     const ed = view.edit ?? needW;
     rows.push(`<div class="set now${D.warm ? ' warm' : ''}"><span class="sn">${no(D)}</span><button class="sv" data-act="edit">${setLong(D, kind)}</button>${wl(D)}
       <button class="sc" data-act="done" aria-label="подход сделан"></button></div>`);
@@ -490,18 +528,18 @@ function workoutPage() {
     for (let k = wn; k < it.sets; k++) rows.push(`<div class="set"><span class="sn">${k + 1}</span><span class="sv">${setText(fw, kind)}</span><span class="sc"></span></div>`);
     return `<section class="card glass cur">
       <div class="row"><button class="exh" data-act="info" data-ex="${esc(it.ex)}">${thumb(it.ex)}<b class="h2">${esc(it.ex)}</b></button>
-        <span class="row"><span class="muted sm num">${work} из ${esc(it.sets)}</span><button class="ic" data-act="fold" aria-label="свернуть">${ICON_UP}</button></span></div>
-      <p class="muted sm">${kind === 'cardio' ? `План: ${esc(it.reps)} мин` : `План: ${esc(it.sets)} ${plural(it.sets, 'подход', 'подхода', 'подходов')} по ${esc(it.reps)} ${kind === 'time' ? 'сек' : 'раз'}, отдых до ♥ ${thrFor(i, n, db.settings)}`}</p>
+        <span class="row"><span class="muted sm num">сделано ${work} из ${esc(it.sets)}</span><button class="ic" data-act="fold" aria-label="свернуть">${ICON_UP}</button></span></div>
+      <p class="muted sm">${kind === 'cardio' ? `План: ${esc(it.reps)} мин` : `План: ${esc(it.sets)} ${plural(it.sets, 'подход', 'подхода', 'подходов')} по ${esc(it.reps)} ${kind === 'time' ? 'сек' : 'раз'}, отдых ${hasHR() ? `до ♥ ${thrFor(i, n, db.settings)}` : 'около 1,5 мин'}`}</p>
       <p class="hint">${esc(sg.text)}</p>
-      ${A.setStart ? `<div class="setbar"><span>${kind === 'cardio' ? 'Идёт' : D.warm ? 'Разминка' : work < it.sets ? `Подход ${work + 1} из ${esc(it.sets)}` : 'Ещё подход'}</span><b class="num" id="settimer">0:00</b></div>` : ''}
+      ${A.setStart ? `<div class="setbar"><span>${kind === 'cardio' ? 'Идёт' : D.warm ? 'Разминка' : work < it.sets ? `Подход ${work + 1} из ${esc(it.sets)}` : 'Ещё подход'}</span><b class="num" id="settimer"${kind === 'time' ? ` data-goal="${esc(D.r)}"` : kind === 'cardio' ? ` data-goal="${esc(D.r * 60)}"` : ''}>0:00</b></div>` : ''}
       <div class="sets">${rows.join('')}</div>
       <button class="link accent edl${ed ? ' on' : ''}" data-act="edit">${ed ? 'Свернуть' : kind === 'cardio' || kind === 'time' ? 'Поменять план' : 'Другой вес или повторы? Поменять'}${ICON_UP}</button>
       ${D.warm && !ed ? '<button class="link accent" data-act="warm">Пропустить разминку</button>' : ''}
       ${ed ? `<div class="steps">${noW(kind) ? '' : stepper('w', D.w, UNIT[kind])}${stepper('r', D.r, RUNIT[kind] || 'повторов')}</div>` : ''}
       <p class="muted sm">${kind === 'cardio' ? 'Время пишет таймер. Закончишь, жми «Завершить», километры впишешь на отдыхе'
-        : kind === 'time' ? 'Держи, время пишет таймер. Закончишь, жми «Завершить подход»'
-        : `${needW ? 'Впиши вес, начни с лёгкого. ' : ''}Закончишь, жми «Завершить». Вышло иначе: поправишь на отдыхе`}</p>
-      <div class="row">
+        : kind === 'time' ? 'Держи, время пишет таймер. Отпустил, жми «Завершить подход»'
+        : `${sg.ask && needW ? 'Впиши вес новой плитки. ' : needW ? 'Впиши вес, начни с лёгкого. ' : ''}Подход сделан? Жми «Завершить подход». Вышло иначе: поправишь на отдыхе`}</p>
+      <div class="row donerow">
         ${ed && isWeight(kind) ? `<button class="toggle${D.warm ? ' on' : ''}" data-act="warm">Разминка</button>` : ''}
         <button class="btn primary grow done-btn" data-act="done">${ICON_OK} Завершить${kind === 'cardio' ? '' : D.warm ? ' разминку' : ' подход'}</button>
       </div>
@@ -528,9 +566,9 @@ function readyOverlay(A) {
     <h2 class="rest-h">Начинаем</h2>
     <p class="muted">Упражнение ${A.cur + 1} из ${A.items.length}</p>
     ${media}<p class="h2">${esc(it.ex)}</p>
-    <p class="next">${kind === 'cardio' ? `План: ${esc(it.reps)} мин` : `${D.warm ? 'Разминка' : `Подход 1 из ${esc(it.sets)}`}: ${askW ? `${esc(it.reps)} раз, вес подбери сам, начни с лёгкого` : setLong(D, kind)}`}</p>
+    <p class="next">${kind === 'cardio' ? `План: ${esc(it.reps)} мин` : `${D.warm ? 'Разминка' : `Подход 1 из ${esc(it.sets)}`}: ${askW ? `${esc(it.reps)} раз, вес выбери на месте, начни с лёгкого` : setLong(D, kind)}`}</p>
     ${c ? `<ul class="cues">${c.cues.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-    <button class="link accent" data-act="swap" data-ctx="work" data-i="${A.cur}">Тренажёр занят? Заменить</button>
+    <button class="link accent" data-act="swap" data-ctx="work" data-i="${A.cur}">Занято или не подходит? Заменить</button>
     <p class="muted sm tip">Кнопка запустит таймер подхода. Закончишь, жми «Завершить подход», потом будет отдых</p>
     <button class="btn primary xl" data-act="go">Начать подход</button>
     <button class="link" data-act="finish">Отменить</button></div>`;
@@ -541,13 +579,23 @@ const mstep = (f, v, unit) => `<div class="mstep">
   <button data-act="lstep" data-f="${f}" data-d="-1" aria-label="меньше">−</button>
   <label><input data-last="${f}" inputmode="decimal" value="${fmtW(v)}"><small>${unit}</small></label>
   <button data-act="lstep" data-f="${f}" data-d="1" aria-label="больше">+</button></div>`;
-function lastSet(s) {
+function lastSet(s, A) {
   const kind = kindOf(s.ex), dur = s.st && s.t - s.st >= 1000 ? (s.t - s.st) / 1000 : 0;
-  // «Как было?»: по нему следующая подсказка прибавляет два шага, один или ни одного. Не нажал: «Норм»
-  const feel = s.warm || kind === 'cardio' ? '' : `<div class="feel"><span class="muted sm">Как было?</span>${[['easy', 'Легко'], ['ok', 'Норм'], ['hard', 'Тяжело']]
-    .map(([v, t]) => `<button class="chip${(s.feel || 'ok') === v ? ' on' : ''}" data-act="feel" data-v="${v}">${t}</button>`).join('')}</div>`;
-  return `<div class="lastset">
-    <p class="muted sm">${s.warm ? 'Разминка сделана' : 'Подход сделан'}${dur ? ` за ${fmtSec(dur)}` : ''}. Вышло иначе? Поправь</p>
+  const it = A.items.find(i => i.ex === s.ex), work = A.sets.filter(x => x.ex === s.ex && !x.warm);
+  // «Как было?» один раз на упражнение, после последнего рабочего подхода: его ответ и берёт подсказка.
+  // Под кнопками сразу видно, что выйдет в следующий раз
+  let feel = '';
+  if (!s.warm && kind !== 'cardio' && it && work.length >= it.sets) {
+    const nx = suggest(workStats(work), it, kind);
+    const next = isWeight(kind) && !nx.ask && nx.w != null ? `В следующий раз: ${fmtW(nx.w)} ${UNIT[kind] || 'кг'}` : 'Подскажу на следующий раз';
+    feel = `<div class="feel"><span class="muted sm">Как было?</span>${[['easy', 'Легко'], ['ok', 'Норм'], ['hard', 'Тяжело']]
+      .map(([v, t]) => `<button class="chip${(s.feel || 'ok') === v ? ' on' : ''}" data-act="feel" data-v="${v}">${t}</button>`).join('')}</div>
+      <p class="muted sm">${next}</p>`;
+  }
+  const head = kind === 'cardio' ? `Кардио: ${esc(s.r)} мин. Сколько км? Глянь на табло`
+    : `${s.warm ? 'Разминка сделана' : 'Подход сделан'}${dur ? ` за ${fmtSec(dur)}` : ''}. Вышло иначе? Поправь`;
+  return `<div class="lastset${kind === 'cardio' ? ' ask' : ''}">
+    <p class="muted sm">${head}</p>
     <div class="msteps">${noW(kind) ? '' : mstep('w', s.w, UNIT[kind] || 'кг')}${mstep('r', s.r, RUNIT[kind] || 'раз')}</div>${feel}</div>`;
 }
 
@@ -558,27 +606,33 @@ function restOverlay(A) {
   const ni = nextIdx(A), it = A.items[ni];
   const doneWork = A.sets.filter(s => s.ex === it.ex && !s.warm).length;
   const left = doneWork < it.sets;
-  const nd = ni === A.cur ? A.draft : draftFor(ni);
+  const nd = ni === A.cur ? A.draft : draftFor(ni), nk = kindOf(it.ex);
+  // Новое упражнение без истории веса: не «0 кг», а честно «выберешь на месте»
+  const nw = isWeight(nk) && !nd.warm && suggest(lastOf(it.ex), it, nk).w == null ? `${esc(it.reps)} раз, вес выберешь на месте` : setLong(nd, nk);
   const next = left
-    ? `Дальше: ${esc(it.ex)}, ${nd.warm ? 'разминка' : `подход ${doneWork + 1} из ${esc(it.sets)}`}, ${setLong(nd, kindOf(it.ex))}`
-    : 'Всё по плану сделано';
+    ? `Дальше: ${esc(it.ex)}, ${nk === 'cardio' ? `${esc(it.reps)} мин` : `${nd.warm ? 'разминка' : `подход ${doneWork + 1} из ${esc(it.sets)}`}, ${nw}`}`
+    : 'Можно заканчивать или сделать ещё подход';
   // Переход на новое упражнение: показываем, как его делать, пока отдыхаешь, и даём заменить, если тренажёр занят
   const c = left && ni !== A.cur && CAT[it.ex];
   const media = c ? `<div class="anim next"><img src="img/${c.img}-0.jpg" alt=""><img src="img/${c.img}-1.jpg" alt=""></div>` : '';
-  const swap = left && ni !== A.cur ? `<button class="link accent" data-act="swap" data-ctx="work" data-i="${ni}">Тренажёр занят? Заменить</button>` : '';
-  // Без часов и без прошлых замеров цель отдыха полторы минуты: таймер так же зеленеет
+  const swap = left && ni !== A.cur ? `<button class="link accent" data-act="swap" data-ctx="work" data-i="${ni}">Занято или не подходит? Заменить</button>` : '';
+  // Без прошлых замеров цель отдыха полторы минуты: таймер так же зеленеет. Пульс ни разу не вставляли
+  // (часов нет или не настроено): главная строка про полторы минуты, порог пульса мелко для тех, кто с часами
   const goal = was || 90;
   const buttons = left
     ? '<button class="btn primary xl" data-act="go">Начать подход</button><button class="link" data-act="finish">Закончить тренировку</button>'
-    : '<button class="btn primary xl" data-act="finish">Закончить</button><button class="link" data-act="go">Ещё подход</button>';
+    : '<button class="btn primary xl" data-act="finish">Закончить тренировку</button><button class="link" data-act="go">Ещё подход</button>';
+  const pulse = hasHR()
+    ? `<p class="thr-t"><span class="heart" aria-hidden="true">♥</span> подход, когда пульс ниже <b>${esc(R.thr)}</b></p>`
+    : `<p class="thr-t">Отдыхай около <b>1,5</b> минут</p><p class="muted sm">С часами: подход, когда пульс ниже ${esc(R.thr)}</p>`;
   return `<div class="rest" role="dialog" aria-label="Отдых">
-    <h2 class="rest-h">Отдых</h2>
-    ${last ? lastSet(last) : ''}
+    <h2 class="rest-h${left ? '' : ' fin'}">${left ? 'Отдых' : 'Всё по плану!'}</h2>
+    ${last ? lastSet(last, A) : ''}
     <div class="timer" id="timer" data-hint="${Math.round(goal)}">0:00</div>
-    <p class="thr-t"><span class="heart" aria-hidden="true">♥</span> подход, когда пульс ниже <b>${esc(R.thr)}</b></p>
+    ${pulse}
     ${was ? `<p class="muted sm" id="ready-no">В прошлый раз пульс падал до порога в среднем за ${fmtSec(was)}</p>
       <p class="sm ok" id="ready" hidden>Обычно к этому времени пульс уже ниже ${esc(R.thr)}. Глянь на часы</p>`
-      : `<p class="muted sm" id="ready-no">Без часов: отдых около полутора минут</p>
+      : `<p class="muted sm" id="ready-no">Таймер позеленеет, когда пора</p>
       <p class="sm ok" id="ready" hidden>Полторы минуты прошло, можно начинать</p>`}
     ${media}<p class="next">${next}</p>${swap}
     ${buttons}</div>`;
@@ -618,8 +672,7 @@ function planRow(it, i) {
 function todayPage() {
   ensurePlan();
   // Новичка не встречаем серверами и файлами: перенос истории живёт в Настройках
-  const empty = db.sessions.length ? '' : `<p class="foot">Первая тренировка? Просто жми «Приступить» внизу. Историю с другого телефона можно перенести в Настройках.</p>
-    ${hasStarter() ? '' : '<button class="link accent" data-act="starter">Или взять готовую программу для новичка</button>'}`;
+  const empty = db.sessions.length ? '' : '<p class="foot">Первая тренировка? Ниже программа для новичка на тренажёрах, просто жми «Приступить». Историю с другого телефона можно перенести в Настройках.</p>';
   const items = db.plan.items;
   // Кнопка «Приступить» прилипает к низу экрана: видна сразу, как бы длинно ни вышел план
   const plan = `<section class="card glass plan">
@@ -731,7 +784,7 @@ function addSheet(S) {
 function guideSheet(S) {
   const steps = S.part === 'hr' ? GUIDE_HR : GUIDE_USE;
   const note = S.part === 'hr'
-    ? '<p class="muted sm">Собирается один раз. Названия в «Командах» могут чуть отличаться: ищи по смыслу. Застрял: пришли скриншот.</p>'
+    ? '<p class="muted sm">Собирается один раз. Названия в «Командах» могут чуть отличаться: ищи по смыслу. Не получается: пришли скриншот.</p>'
     : '';
   return `<h2>Как пользоваться</h2>
     <div class="seg glass">
@@ -838,7 +891,7 @@ function exercisePage() {
   const idx = new Map(db.sessions.map((s, i) => [s, i]));
   const list = [...h].reverse().map(x => {
     const k = idx.get(x.session);
-    const star = recordOf(bestOf(ex, [x.session]), bestOf(ex, db.sessions.slice(0, k))) ? '<span class="gold">★</span> ' : '';
+    const star = kind !== 'cardio' && recordOf(bestOf(ex, [x.session]), bestOf(ex, db.sessions.slice(0, k))) ? '<span class="gold">★</span> ' : '';
     const sets = x.session.sets.filter(s => s.ex === ex).map(s => `<span class="${s.warm ? 'muted' : ''}">${setText(s, kind)}</span>`).join(', ');
     return `<button class="li" data-act="sess" data-id="${esc(x.session.id)}"><span class="txt"><b>${star}${esc(x.session.label)}</b><small class="sets">${sets}</small></span><span class="muted">›</span></button>`;
   }).join('');
@@ -860,11 +913,14 @@ function exercisePage() {
 }
 
 function summaryCard(s, k) {
-  const work = s.sets.filter(x => !x.warm);
+  // Кардио отдельно: в подходы, тоннаж и «Под нагрузкой» не идёт
+  const work = s.sets.filter(x => !x.warm && kindOf(x.ex) !== 'cardio');
+  const cardio = s.sets.filter(x => kindOf(x.ex) === 'cardio');
+  const cMin = cardio.reduce((a, x) => a + (x.r || 0), 0), cKm = cardio.reduce((a, x) => a + (x.w || 0), 0);
   const tons = Math.round(work.reduce((a, x) => a + (isWeight(kindOf(x.ex)) ? (x.w || 0) * (x.r || 0) * (kindOf(x.ex) === 'side' ? 2 : 1) : 0), 0) / 100) / 10;
   const mins = s.start && s.end ? Math.round((s.end - s.start) / 6e4) : null;
   // Под нагрузкой: сумма времени подходов от «Начать подход» до «Завершить» (есть с v0.8)
-  const tut = s.sets.reduce((a, x) => a + (x.st && x.t > x.st ? x.t - x.st : 0), 0) / 1000;
+  const tut = s.sets.reduce((a, x) => a + (kindOf(x.ex) !== 'cardio' && x.st && x.t > x.st ? x.t - x.st : 0), 0) / 1000;
   const recs = sessionRecords(k);
   const rec = avg((s.rests || []).filter(r => r.toThr != null).map(r => r.toThr));
   const prevS = db.sessions.slice(0, k).reverse().find(x => x.rests?.some(r => r.toThr != null));
@@ -881,6 +937,7 @@ function summaryCard(s, k) {
       <div class="stat"><small>Поднято</small><b><span data-count="${tons}" data-dec="1">${fmtW(tons)}</span> т</b></div>
       ${mins ? `<div class="stat"><small>Время</small><b><span data-count="${mins}">${mins}</span> мин</b></div>` : ''}
       ${tut ? `<div class="stat"><small>Под нагрузкой</small><b>${fmtSec(tut)}</b></div>` : ''}
+      ${cardio.length ? `<div class="stat"><small>Кардио</small><b>${cMin} мин${cKm ? `, ${fmtW(Math.round(cKm * 10) / 10)} км` : ''}</b></div>` : ''}
     </div>
     ${recs.length ? `<ul class="recs">${recs.map(r => `<li><span class="gold">★</span><span>${esc(r.ex)}: <b>${setText(r.top, kindOf(r.ex))}</b></span><small class="muted">${recordText(r.what, kindOf(r.ex))}</small></li>`).join('')}</ul>` : ''}
     ${pulse}</section>`;
@@ -1111,7 +1168,7 @@ const ACT = {
       else if (replace) list[S.i] = it;
       else { list.push(it); a.cur = list.length - 1; }
       a.draft = draftFor(a.cur);
-      a.setStart = Date.now();
+      startSet(a);
       delete view.fold;
       delete view.edit;
     } else if (replace) list[S.i] = it;
@@ -1120,7 +1177,8 @@ const ACT = {
   },
   newq: () => {
     const S = view.sheet, name = S.q.trim();
-    if (!db.exercises[name] && !CAT[name]) db.exercises[name] = { kind: 'total', basis: KINDS.total, group: S.g || undefined };
+    const kind = S.g === 'cardio' ? 'cardio' : 'total'; // своё из вкладки «Кардио» сразу кардио, а не силовое
+    if (!db.exercises[name] && !CAT[name]) db.exercises[name] = { kind, basis: KINDS[kind], group: S.g || undefined };
     ACT.pick({ ex: name });
   },
   useremote: () => {
@@ -1151,12 +1209,16 @@ const ACT = {
   },
   startplan: () => startWith(planName(db.plan.items), null, db.plan.items),
   start: d => { const p = db.programs.find(x => x.id === d.id); startWith(p.name, p.id, p.items); view = { tab: 'today' }; },
-  resume: () => { A().resumed = Date.now(); },
+  resume: () => { A().resumed = Date.now(); startSet(A()); }, // иначе таймер подхода считает со вчера
   // Своя же свёрнутая карточка разворачивается с теми же цифрами, другая становится текущей
   cur: d => {
     const a = A(), i = +d.i;
     delete view.fold;
-    if (i !== a.cur) { a.cur = i; a.draft = draftFor(i); delete view.edit; a.setStart = Date.now(); }
+    if (i === a.cur) return;
+    // Идёт подход (дорожка на 20 минут): молча не бросаем
+    const run = !a.rest && a.setStart ? Date.now() - a.setStart : 0;
+    if (run > 30000 && !confirm(`Подход ещё идёт, ${fmtSec(run / 1000)}. Бросить его и перейти?`)) return false;
+    a.cur = i; a.draft = draftFor(i); delete view.edit; startSet(a);
   },
   fold: () => { view.fold = true; },
   edit: () => { view.edit = !$('.card.cur .steps'); }, // по экрану: цифры бывают открыты и без нажатия (нет веса)
@@ -1173,12 +1235,14 @@ const ACT = {
   // «Завершить подход»: время подхода от «Начать подход» (st), цифры по плану, поправить можно на отдыхе
   done: () => {
     const a = A(), it = curItem(), D = a.draft, t = Date.now(), kind = kindOf(it.ex);
+    // Двойной тап по «Начать подход» попадает в «Завершить»: подход короче 0,7 с не бывает. У планки и «приготовься»
+    if (a.setStart && t - a.setStart < 700) return false;
     const set = { ex: it.ex, w: noW(kind) ? 0 : D.w, r: D.r, warm: D.warm, t };
     if (a.setStart && t - a.setStart < 3 * 36e5) {
       set.st = a.setStart;
-      // Планка и кардио: время берём с таймера подхода, поправить можно на отдыхе
-      if (kind === 'time') set.r = Math.round((t - a.setStart) / 1000);
-      if (kind === 'cardio') set.r = Math.max(1, Math.round((t - a.setStart) / 6e4));
+      // Планка и кардио: время с таймера подхода, если цифры не вписали руками; поправить можно на отдыхе
+      if (kind === 'time' && !view.edit) set.r = Math.round((t - a.setStart) / 1000);
+      if (kind === 'cardio' && !view.edit) set.r = Math.max(1, Math.round((t - a.setStart) / 6e4));
     }
     delete a.setStart;
     const what = prOf(set, a.sets);
@@ -1188,6 +1252,7 @@ const ACT = {
     a.draft = draftFor(a.cur);
     delete view.edit;
     if (what) setTimeout(() => celebrate(recordText(what, kind), `${it.ex}: ${setText(set, kind)}`), 50);
+    else if (allDone(a) && !set.warm) setTimeout(() => celebrate('Всё по плану!', 'Можно заканчивать'), 50);
   },
   feel: d => {
     const s = A().sets.at(-1);
@@ -1202,13 +1267,13 @@ const ACT = {
   go: () => {
     const a = A();
     // Время тренировки с первого подхода: «Начинаем» могли оставить открытым со вчера
-    if (a.ready) { delete a.ready; a.startedAt = a.setStart = Date.now(); return; }
+    if (a.ready) { delete a.ready; a.startedAt = Date.now(); startSet(a); return; }
     delete view.fold;
     a.rests.push({ ...a.rest, end: Date.now() });
     a.rest = null;
     const ni = nextIdx(a);
     if (ni !== a.cur) { a.cur = ni; a.draft = draftFor(ni); }
-    a.setStart = Date.now();
+    startSet(a);
   },
   delset: d => {
     const a = A(), k = +d.k, s = a.sets.splice(k, 1)[0];
@@ -1218,6 +1283,9 @@ const ACT = {
   },
   finish: () => {
     const a = A();
+    // Идёт подход (дорожку забыли «Завершить»): спрашиваем, записать ли его, а не теряем молча
+    const run = !a.rest && !a.ready && a.setStart ? Date.now() - a.setStart : 0;
+    if (run > 20000 && confirm(`Подход ещё идёт, ${fmtSec(run / 1000)}. Записать его?`)) ACT.done();
     if (!a.sets.length) {
       if (!confirm('Подходов нет. Отменить тренировку?')) return false;
       db.active = null;
@@ -1453,8 +1521,14 @@ function tick() {
       $('#ready-no').hidden = sec >= hint;
     }
   }
+  // Таймер подхода: у планки сначала «Готовься 5». Цель планки или кардио взята: зелёный и короткий сигнал
   const st = $('#settimer');
-  if (st && a.setStart) st.textContent = fmtSec((Date.now() - a.setStart) / 1000);
+  if (st && a.setStart) {
+    const sec = (Date.now() - a.setStart) / 1000, goal = +st.dataset.goal;
+    st.textContent = sec < 0 ? `Готовься ${Math.ceil(-sec)}` : fmtSec(sec);
+    st.classList.toggle('hit', goal > 0 && sec >= goal);
+    if (goal > 0 && sec >= goal && sec < goal + 3 && beeped !== a.setStart) { beeped = a.setStart; beep(); }
+  }
   const el = $('#elapsed');
   if (el) {
     const m = Math.floor((Date.now() - (a.resumed || a.startedAt)) / 6e4), n = a.sets.length;

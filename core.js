@@ -21,8 +21,8 @@ export function workStats(sets) {
   return {
     top,
     reps: tops.map(s => s.r),
-    // «Как было?» с экрана отдыха по подходам с самым тяжёлым весом: хоть один тяжело, значит тяжело
-    feel: tops.some(s => s.feel === 'hard') ? 'hard' : tops.every(s => s.feel === 'easy') ? 'easy' : null,
+    // «Как было?» спрашиваем после последнего рабочего подхода упражнения: его ответ и берём. Хоть один «тяжело», значит тяжело
+    feel: work.some(s => s.feel === 'hard') ? 'hard' : work.at(-1).feel || null,
     e1: Math.max(...work.map(s => e1rm(s.w, s.r))),
     tonnage: work.reduce((a, s) => a + s.w * (s.r || 0), 0),
   };
@@ -48,33 +48,41 @@ const mean = a => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
 function slowRest(tail, ex) {
   const rec = e => mean((e.session?.rests || []).filter(r => r.ex === ex && r.toThr != null).map(r => r.toThr));
   const now = rec(tail.at(-1)), before = mean(tail.slice(0, -1).map(rec).filter(v => v != null));
-  return now != null && before != null && now > 1.3 * before;
+  return now != null && before > 0 && now > 1.3 * before; // 0: раньше пульс до порога не поднимался, сравнивать не с чем
 }
+
+// Вес словами для подсказки: «27,5 кг», «42,5 кг на сторону», «2,5 кг на поясе»
+const KG = { side: 'кг на сторону', added: 'кг на поясе' };
+const kg = (w, kind) => `${fmtW(w)} ${KG[kind] || 'кг'}`;
+const sum = e => e.reps.reduce((a, r) => a + (r || 0), 0);
 
 // Двойная прогрессия: все подходы с самым тяжёлым весом на целевые повторы, значит прибавляем шаг.
 // Сколько их было, не важно: «лесенка» 40/50/40 даёт один подход на 50, и это норма.
-// Подстройка под человека, по важности: застой (3 раза подряд не добрал: минус 10%), «Добей», «Было тяжело»,
-// пульс восстанавливался дольше обычного (закрепить), «Было легко» (два шага вместо одного).
-// last.prev: до трёх последних тренировок с упражнением, вместе с last (подкладывает приложение)
+// Подстройка под человека, по важности: застой (3 раза подряд тот же вес, повторы не добраны и не растут: минус 10%),
+// цель не взята, «Было тяжело», пульс восстанавливался дольше обычного (тот же вес), «Было легко» (два шага вместо одного).
+// last.prev: до трёх последних тренировок с упражнением, вместе с last (подкладывает приложение).
+// ask: вес новой плитки знает только тренажёр, приложение просит его вписать
 export function suggest(last, item, kind) {
-  if (!last) return { w: null, text: kind === 'time' ? 'Первый раз: держи, сколько получится' : kind === 'cardio' ? 'Первый раз: в своём темпе' : 'Первый раз: подбери рабочий вес' };
+  if (!last) return { w: null, text: kind === 'time' ? 'Первый раз: держи, сколько получится' : kind === 'cardio' ? 'Первый раз: в своём темпе'
+    : 'Первый раз: возьми вес, с которым все повторы получаются, но последние 2-3 тяжело' };
   const was = `Прошлый раз ${fmtSet(last, kind)}.`;
   if (kind === 'cardio') return { w: last.top, text: was };
   const reached = e => e.reps.length > 0 && e.reps.every(r => r != null && r >= item.reps);
   const step = STEP[kind] ?? 2.5, heavy = kind !== 'bw' && kind !== 'time', tail = last.prev || [last];
-  if (heavy && tail.length >= 3 && tail.slice(-3).every(e => e.top === last.top && !reached(e))) {
-    const w = Math.max(step, Math.round((last.top * 0.9) / step) * step);
-    return { w, text: `${was} Третий раз не добирается: сними до ${fmtW(w)} и набери заново` };
+  const unit = kind === 'time' ? 'сек' : 'раз', same = heavy ? 'вес' : 'результат';
+  if (heavy && last.top > step && tail.length >= 3 && tail.slice(-3).every(e => e.top === last.top && !reached(e)) && sum(last) <= sum(tail.at(-3))) {
+    const w = Math.min(last.top - step, Math.round((last.top * 0.9) / step) * step);
+    return { w, text: `${was} 3 раза подряд не вышло ${item.reps} раз. Сбавь до ${kg(w, kind)} и снова дойди до ${item.reps}` };
   }
-  if (!reached(last)) return { w: last.top, text: `${was} Добей ${item.sets} × ${kind === 'time' ? `${item.reps} сек` : item.reps}` };
-  if (last.feel === 'hard') return { w: last.top, text: `${was} Было тяжело: закрепи этот ${heavy ? 'вес' : 'результат'}` };
-  if (slowRest(tail, item.ex)) return { w: last.top, text: `${was} Пульс восстанавливался дольше обычного: закрепи` };
+  if (!reached(last)) return { w: last.top, text: `${was} Цель: ${item.sets} × ${item.reps} ${unit}${heavy ? ', вес тот же' : ''}` };
+  if (last.feel === 'hard') return { w: last.top, text: `${was} Было тяжело: оставь тот же ${same}` };
+  if (slowRest(tail, item.ex)) return { w: last.top, text: `${was} Пульс восстанавливался дольше обычного: оставь тот же ${same}` };
   const k = last.feel === 'easy' ? 2 : 1, easy = k > 1 ? 'Было легко: ' : '';
   if (kind === 'time') return { w: 0, text: `${was} ${easy}Попробуй +${5 * k} секунд` };
   if (kind === 'bw') return { w: last.top, text: `${was} ${easy}Попробуй +${k} ${k > 1 ? 'повтора' : 'повтор'}` };
-  if (kind === 'stack') return { w: last.top, text: `${was} ${easy}${k > 1 ? 'Можно через плитку' : 'Пора на следующую плитку'}` };
+  if (kind === 'stack') return { w: last.top, ask: true, text: `${was} ${easy}Переставь штырь на ${k} ${k > 1 ? 'плитки' : 'плитку'} тяжелее и впиши вес` };
   const w = last.top + step * k;
-  return { w, text: `${was} ${easy}Попробуй ${fmtW(w)}` };
+  return { w, text: `${was} ${easy}Попробуй ${kg(w, kind)}` };
 }
 
 // Порог пульса: первая половина упражнений тренировки thr1, вторая thr2

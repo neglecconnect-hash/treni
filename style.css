@@ -183,6 +183,14 @@ main:has(> .rest) .set.now { animation: none; }
 .setbar b { display: inline-flex; align-items: center; gap: 8px; font-size: 30px; font-weight: 600; color: var(--accent-t); }
 .setbar b::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--ok); animation: beat 1.1s ease-in-out infinite; }
 main:has(> .rest) .setbar b::before { animation: none; }
+.setbar b.hit { color: var(--ok); } /* цель планки или кардио взята */
+
+/* «Завершить подход» прилипает к низу над меню: на SE с открытыми цифрами она иначе уходит под меню */
+.donerow { position: sticky; z-index: 3; bottom: calc(env(safe-area-inset-bottom) + 84px); }
+.donerow .toggle { background: rgba(28, 28, 30, 0.92); }
+/* Кардио на отдыхе: поле км подсвечено, его надо вписать */
+.lastset.ask .mstep:first-child { border-color: rgba(10, 132, 255, 0.75); box-shadow: 0 0 0 1px rgba(10, 132, 255, 0.35); }
+.rest-h.fin { color: var(--ok); }
 
 /* Сделанный подход на отдыхе: две компактные крутилки рядом */
 .lastset { display: grid; gap: 6px; width: min(100%, 340px); }
@@ -324,7 +332,6 @@ textarea { margin: 8px 0; font-size: 16px; resize: vertical; }
   .rest .anim.next, .intro .anim.next { max-height: 15dvh; }
   .rest .timer { font-size: 66px; }
   .rest .rest-h { font-size: 22px; }
-  #ready-no { display: none; }
   .rest:not(.intro) .anim.next { display: none; } /* на отдыхе следующее упражнение названо в «Дальше» */
 }
 .rest-h { font-size: 30px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--pulse); }
