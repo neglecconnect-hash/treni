@@ -23,7 +23,7 @@ const II = icon => `<span class="ii">${icon}</span>`;
 const GUIDE_USE = [
   ['Сегодня', `Приложение само собирает тренировку из упражнений, которых давно не было. Порядок меняется пальцем за ${II(ICON_GRIP)}. Не хочешь упражнение: ${II(ICON_SWAP)} заменит на похожее, ${II(ICON_X)} уберёт. Потом «Приступить»: покажет первое упражнение и как его делать, жми «Начать подход». Хочешь начать с другого: там же «Начать с другого».`],
   ['Подход', 'Подходы идут списком, текущий подсвечен синим, вес и повторы уже стоят по плану. «Начать подход» запускает таймер подхода. Закончишь, жми «Завершить подход»: строка позеленеет, начнётся отдых. Вышло иначе: поправь цифры прямо на экране отдыха. Хочешь другой вес заранее: нажми на синюю строку, там же кнопка «Разминка».'],
-  ['Отдых', 'На часах запусти «Тренировка», «Силовая» и смотри на пульс. Упал ниже порога (110 в начале, 115 ближе к концу): жми «Начать подход». Таймер зеленеет, когда в прошлый раз уже было пора.'],
+  ['Отдых', 'Хочешь чередовать упражнения: нажми «Сменить упражнение» и выбери следующее. Отдых продолжится, а сделанные подходы сохранятся. Когда будешь готов, жми «Начать подход». С часами смотри на пульс: ниже порога 110 в начале и 115 ближе к концу. Таймер зеленеет, когда в прошлый раз уже было пора.'],
   ['Ошибка в цифрах', 'На экране отдыха поправь вес и повторы кнопками − и +. Или нажми на зелёный подход в списке: он удалится, а внизу будет «Вернуть».'],
   ['Конец', '«Закончить»: итог, сколько поднято, рекорды. Если подключён GitHub, тренировка сама сохранится там, если нет, время от времени делай бэкап в Настройках.'],
   ['Пульс', 'Дома запусти команду «Трени пульс» и нажми «Вставить пульс» на экране итога. Приложение разберёт каждый отдых. Как собрать команду: вторая вкладка этого гайда.'],
@@ -619,9 +619,9 @@ function restOverlay(A) {
     ? `Дальше: ${esc(it.ex)}, ${nk === 'cardio' ? `${esc(it.reps)} мин` : `${nd.warm ? 'разминка' : `подход ${doneWork + 1} из ${esc(it.sets)}`}, ${nw}`}`
     : 'Можно заканчивать или сделать ещё подход';
   // Переход на новое упражнение: показываем, как его делать, пока отдыхаешь, и даём заменить, если тренажёр занят
-  const c = left && ni !== A.cur && CAT[it.ex];
+  const c = left && it.ex !== R.ex && CAT[it.ex];
   const media = c ? `<div class="anim next"><img src="img/${c.img}-0.jpg" alt=""><img src="img/${c.img}-1.jpg" alt=""></div>` : '';
-  const swap = left && ni !== A.cur ? `<button class="link accent" data-act="swap" data-ctx="work" data-i="${ni}">Занято или не подходит? Заменить</button>` : '';
+  const swap = left && it.ex !== R.ex ? `<button class="link accent" data-act="swap" data-ctx="work" data-i="${ni}">Занято или не подходит? Заменить</button>` : '';
   // Без прошлых замеров цель отдыха полторы минуты: таймер так же зеленеет. Пульс ни разу не вставляли
   // (часов нет или не настроено): главная строка про полторы минуты, порог пульса мелко для тех, кто с часами
   const goal = was || 90;
@@ -641,6 +641,7 @@ function restOverlay(A) {
       : `<p class="muted sm" id="ready-no">Таймер позеленеет, когда пора</p>
       <p class="sm ok" id="ready" hidden>Полторы минуты прошло, можно начинать</p>`}
     ${media}<p class="next">${next}</p>${swap}
+    ${A.items.length > 1 && !allDone(A) ? '<button class="link accent" data-act="picknext">Сменить упражнение</button>' : ''}
     ${buttons}</div>`;
 }
 
@@ -808,6 +809,16 @@ function firstSheet() {
     <div class="group glass">${A.items.filter((it, i) => i !== A.cur).map(it => pickRow(it.ex, 'setfirst')).join('')}</div>`;
 }
 
+// На отдыхе выбираем следующий подход, не переставляя программу и не останавливая отдых.
+function nextSheet() {
+  const a = db.active;
+  return `<h2>Следующее упражнение</h2><div class="group glass">${a.items.map((it, i) => {
+    const work = a.sets.filter(s => s.ex === it.ex && !s.warm).length;
+    return `<button class="li" data-act="setnext" data-i="${i}"${work >= it.sets ? ' disabled' : ''}>
+      ${thumb(it.ex)}<span class="txt"><b>${esc(it.ex)}</b><small class="muted">${work} из ${esc(it.sets)}${work >= it.sets ? ', выполнено' : ''}</small></span></button>`;
+  }).join('')}</div>`;
+}
+
 function conflictSheet() {
   const n = remoteOffer.sessions.length, m = db.sessions.length;
   return `<h2>Чьи данные оставить?</h2>
@@ -820,7 +831,7 @@ function conflictSheet() {
 function sheet() {
   const S = view.sheet;
   if (!S) return '';
-  const body = { info: infoSheet, swap: swapSheet, add: addSheet, conflict: conflictSheet, guide: guideSheet, first: firstSheet }[S.t](S);
+  const body = { info: infoSheet, swap: swapSheet, add: addSheet, conflict: conflictSheet, guide: guideSheet, first: firstSheet, next: nextSheet }[S.t](S);
   return `<div class="sheet-bg" data-act="close"></div>
     <div class="sheet glass" role="dialog"><div class="grab"></div><button class="close ic" data-act="close" aria-label="закрыть">${ICON_X}</button>${body}</div>`;
 }
@@ -1170,6 +1181,17 @@ const ACT = {
   guideok: () => { db.settings.guideSeen = Date.now(); },
   swap: d => { view.sheet = { t: 'swap', ctx: d.ctx, i: +d.i }; },
   pickfirst: () => { view.sheet = { t: 'first' }; },
+  picknext: () => { if (A()?.rest) view.sheet = { t: 'next' }; },
+  setnext: d => {
+    const a = A(), i = +d.i;
+    if (!a?.rest || !Number.isInteger(i) || i < 0 || i >= a.items.length) return false;
+    const it = a.items[i];
+    if (a.sets.filter(s => s.ex === it.ex && !s.warm).length >= it.sets) return false;
+    if (i !== a.cur) { a.cur = i; a.draft = draftFor(i); }
+    delete view.fold;
+    delete view.edit;
+    delete view.sheet;
+  },
   setfirst: d => {
     const a = A(), i = a.items.findIndex(x => x.ex === d.ex);
     a.items.unshift(a.items.splice(i, 1)[0]);
@@ -1637,10 +1659,14 @@ document.addEventListener('focusin', e => {
   if (t.matches('[data-in], [data-last], .num-in, .pi-n input')) setTimeout(() => t.setSelectionRange(0, t.value.length), 50);
 });
 // iOS 26-27 (WebKit 297779): после клавиатуры fixed-слой бывает урезан, и меню висит посреди экрана на любой вкладке.
-// Меряем, где меню на деле, и досдвигаем вниз (--vvfix, им же тост и шторку). Без бага сдвиг 0
+// Меряем, где меню на деле, и досдвигаем вниз (--vvfix, им же тост и шторку). Без бага сдвиг 0.
+// Во время пружинящего скролла iOS rect временно смещён: его компенсация сама уводит меню за экран.
 let vvFix = 0;
 function pinTabs() {
   if (document.activeElement?.matches('input, textarea, select')) return; // клавиатура открыта, меню и так спрятано
+  const scroller = document.scrollingElement;
+  const maxScroll = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+  if (scrollY < -1 || scrollY > maxScroll + 1) return;
   const tabs = $('#tabs'), want = innerHeight - parseFloat(getComputedStyle(tabs).bottom);
   const d = Math.max(0, Math.round(vvFix + want - tabs.getBoundingClientRect().bottom));
   if (d !== vvFix) document.documentElement.style.setProperty('--vvfix', `${(vvFix = d)}px`);
