@@ -538,12 +538,12 @@ function workoutPage() {
       <p class="hint">${esc(sg.text)}</p>
       ${A.setStart ? `<div class="setbar"><span>${kind === 'cardio' ? 'Идёт' : D.warm ? 'Разминка' : work < it.sets ? `Подход ${work + 1} из ${esc(it.sets)}` : 'Ещё подход'}</span><b class="num" id="settimer"${kind === 'time' ? ` data-goal="${esc(D.r)}"` : kind === 'cardio' ? ` data-goal="${esc(D.r * 60)}"` : ''}>0:00</b></div>` : ''}
       <div class="sets">${rows.join('')}</div>
-      <button class="link accent edl${ed ? ' on' : ''}" data-act="edit">${ed ? 'Свернуть' : kind === 'cardio' || kind === 'time' ? 'Поменять план' : 'Другой вес или повторы? Поменять'}${ICON_UP}</button>
+      <button class="link accent edl${ed ? ' on' : ''}" data-act="edit">${ed ? 'Свернуть' : kind === 'cardio' || kind === 'time' ? 'Поменять план' : 'Изменить подход'}${ICON_UP}</button>
       ${D.warm && !ed ? '<button class="link accent" data-act="warm">Пропустить разминку</button>' : ''}
       ${ed ? `<div class="steps">${noW(kind) ? '' : stepper('w', D.w, UNIT[kind])}${stepper('r', D.r, RUNIT[kind] || 'повторов')}</div>` : ''}
       <p class="muted sm">${kind === 'cardio' ? 'Время пишет таймер. Закончишь, жми «Завершить», километры впишешь на отдыхе'
         : kind === 'time' ? 'Держи, время пишет таймер. Отпустил, жми «Завершить подход»'
-        : `${sg.ask && needW ? 'Впиши вес новой плитки. ' : needW ? 'Впиши вес, начни с лёгкого. ' : ''}Подход сделан? Жми «Завершить подход». Вышло иначе: поправишь на отдыхе`}</p>
+        : `${sg.ask && needW ? 'Впиши вес новой плитки. ' : needW ? 'Впиши вес, начни с лёгкого. ' : ''}Вышло иначе: поправишь на отдыхе`}</p>
       <div class="row donerow">
         ${ed && isWeight(kind) ? `<button class="toggle${D.warm ? ' on' : ''}" data-act="warm">Разминка</button>` : ''}
         <button class="btn primary grow done-btn" data-act="done">${ICON_OK} Завершить${kind === 'cardio' ? '' : D.warm ? ' разминку' : ' подход'}</button>
@@ -575,7 +575,7 @@ function readyOverlay(A) {
     ${c ? `<ul class="cues">${c.cues.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
     <div class="row links"><button class="link accent" data-act="swap" data-ctx="work" data-i="${A.cur}">Занято? Заменить</button>
       ${A.items.length > 1 ? '<button class="link accent" data-act="pickfirst">Начать с другого</button>' : ''}</div>
-    <p class="muted sm tip">Кнопка запустит таймер подхода. Закончишь, жми «Завершить подход», потом будет отдых</p>
+    <p class="muted sm tip">Заверши подход, чтобы перейти к отдыху.</p>
     <button class="btn primary xl" data-act="go">Начать подход</button>
     <button class="link" data-act="finish">Отменить</button></div>`;
 }
@@ -680,7 +680,7 @@ function planRow(it, i) {
 function todayPage() {
   ensurePlan();
   // Новичка не встречаем серверами и файлами: перенос истории живёт в Настройках
-  const empty = db.sessions.length ? '' : '<p class="foot">Первая тренировка? Ниже программа для новичка на тренажёрах, просто жми «Приступить». Историю с другого телефона можно перенести в Настройках.</p>';
+  const empty = db.sessions.length ? '' : '<p class="foot">Первая тренировка? Ниже программа для новичка на тренажёрах. Историю с другого телефона можно перенести в Настройках.</p>';
   const items = db.plan.items;
   // Кнопка «Приступить» прилипает к низу экрана: видна сразу, как бы длинно ни вышел план
   const plan = `<section class="card glass plan">
@@ -744,7 +744,7 @@ function libraryPage() {
   const S = (view.lib ||= {});
   const chips = [['', 'Все'], ...Object.entries(GROUPS)]
     .map(([k, v]) => `<button class="chip${(S.g || '') === k ? ' on' : ''}" data-act="lgrp" data-g="${k}">${v}</button>`).join('');
-  return `<header class="hd"><h1>Упражнения</h1><p class="sub">${CATALOG.length} с фото и техникой. Нажми, чтобы посмотреть, как делать</p></header>
+  return `<header class="hd"><h1>Упражнения</h1><p class="sub">${CATALOG.length} с фото и техникой</p></header>
     <input class="search" data-lq placeholder="Поиск" value="${esc(S.q || '')}" autocomplete="off">
     <div class="chips gch">${chips}</div>
     <div class="lib" id="llist">${libList(S)}</div>`;
@@ -980,7 +980,7 @@ function sessionPage() {
       ${chart({ series: [{ cls: 'hr', pts: s.hr.s }], thr, marks: s.sets.filter(x => x.t).map(x => (x.t - s.hr.t0) / 1000), axis: ['0 мин', `${Math.round(end / 60)} мин`] })}
       <p class="muted sm">Вертикальные линии: подходы. Пунктир: порог.</p></section>`;
   } else if (s.rests?.length && db.sessions.some(x => x.hr)) {
-    pulse = `<section class="card glass"><p class="muted sm">Пульса пока нет. Запусти команду «Трени пульс» и нажми кнопку.</p>
+    pulse = `<section class="card glass"><p class="muted sm">Пульса пока нет. Запусти команду «Трени пульс».</p>
       <button class="btn primary wide" data-act="paste">Вставить пульс</button>
       <button class="link accent" data-act="guide" data-part="hr">Как собрать команду</button></section>`;
   } else if (s.rests?.length) {
@@ -1025,7 +1025,7 @@ function settingsPage() {
   const progs = db.programs.map(p => `<button class="li" data-act="prog" data-id="${esc(p.id)}">
     <span><b>${esc(p.name)}</b><small class="muted">${p.items.length} ${plural(p.items.length, 'упражнение', 'упражнения', 'упражнений')}</small></span><span class="muted">›</span></button>`).join('');
   return `<header class="hd"><h1>Настройки</h1></header>
-    <div class="group glass"><button class="li" data-act="guide"><span>Как пользоваться</span><span class="muted">›</span></button></div>
+    <div class="group glass"><button class="li" data-act="guide"><span>Как пользоваться</span></button></div>
     <h4 class="cap">Порог пульса для отдыха</h4>
     <div class="group glass">
       <label class="li"><span>В начале тренировки</span><span><input class="num-in" data-set="thr1" inputmode="numeric" value="${esc(S.thr1)}"> уд/мин</span></label>
@@ -1038,7 +1038,7 @@ function settingsPage() {
     </div>
     <h4 class="cap">Пульс с часов</h4>
     <div class="group glass pad">
-      <p class="muted sm">После тренировки запусти команду «Трени пульс». Она скопирует замеры, потом нажми кнопку.</p>
+      <p class="muted sm">После тренировки запусти команду «Трени пульс», чтобы скопировать замеры.</p>
       <button class="btn primary wide" data-act="paste">Вставить пульс</button>
       <button class="link accent" data-act="guide" data-part="hr">Как собрать команду</button>
       <details><summary class="muted sm">Вставить текстом</summary>
@@ -1060,11 +1060,11 @@ function settingsPage() {
     <h4 class="cap">Программы</h4>
     <div class="group glass">${progs}<button class="li accent" data-act="newprog">Новая программа</button>${hasStarter() ? '' : '<button class="li accent" data-act="starter">Добавить готовую: «Новичку, всё тело»</button>'}</div>
     <h4 class="cap">Упражнения</h4>
-    <div class="group glass"><button class="li" data-act="exl"><span>Тип веса и свои упражнения</span><span class="muted">›</span></button></div>
+    <div class="group glass"><button class="li" data-act="exl"><span>Тип веса и свои упражнения</span></button></div>
     <h4 class="cap">Данные</h4>
     <div class="group glass">
       <button class="li" data-act="backup"><span>Сохранить бэкап в файл</span><span class="muted sm">${S.backupAt ? ago(isoDay(S.backupAt)) : 'ещё не было'}</span></button>
-      <button class="li" data-act="imp"><span>Импорт истории или бэкапа</span><span class="muted">›</span></button>
+      <button class="li" data-act="imp"><span>Импорт истории или бэкапа</span></button>
     </div>
     <p class="foot">${nTrain(db.sessions.length)}, ${nSets} ${plural(nSets, 'подход', 'подхода', 'подходов')}, ${kb} КБ.
       ${meta.token ? 'Копия в GitHub.' : 'Данные хранятся только на этом телефоне.'} Фото упражнений: free-exercise-db.</p>`;
@@ -1660,9 +1660,13 @@ document.addEventListener('focusin', e => {
 });
 // iOS 26-27 (WebKit 297779): после клавиатуры fixed-слой бывает урезан, и меню висит посреди экрана на любой вкладке.
 // Меряем, где меню на деле, и досдвигаем вниз (--vvfix, им же тост и шторку). Без бага сдвиг 0.
-// Во время пружинящего скролла iOS rect временно смещён: его компенсация сама уводит меню за экран.
-let vvFix = 0;
+// Во время жеста rect может смещаться даже при scrollY внутри диапазона. Ждём окончания прокрутки.
+let vvFix = 0, vvTimer, vvTouching = false;
 function pinTabs() {
+  clearTimeout(vvTimer);
+  if (!vvTouching) vvTimer = setTimeout(applyTabsFix, 150);
+}
+function applyTabsFix() {
   if (document.activeElement?.matches('input, textarea, select')) return; // клавиатура открыта, меню и так спрятано
   const scroller = document.scrollingElement;
   const maxScroll = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
@@ -1670,6 +1674,13 @@ function pinTabs() {
   const tabs = $('#tabs'), want = innerHeight - parseFloat(getComputedStyle(tabs).bottom);
   const d = Math.max(0, Math.round(vvFix + want - tabs.getBoundingClientRect().bottom));
   if (d !== vvFix) document.documentElement.style.setProperty('--vvfix', `${(vvFix = d)}px`);
+}
+function trackTabsTouch(e) {
+  vvTouching = e.touches.length > 0;
+  pinTabs();
+}
+for (const type of ['touchstart', 'touchend', 'touchcancel']) {
+  document.addEventListener(type, trackTabsTouch, { passive: true });
 }
 addEventListener('scroll', pinTabs, { passive: true });
 addEventListener('resize', pinTabs);
