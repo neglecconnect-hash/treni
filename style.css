@@ -16,7 +16,7 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-html { background: #000; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; overscroll-behavior-y: none; }
+html { background: #000; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body {
   min-height: 100dvh;
   padding: calc(env(safe-area-inset-top) + 8px) max(16px, env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 108px) max(16px, env(safe-area-inset-left));
@@ -168,17 +168,8 @@ button:disabled { opacity: 0.4; }
 .set.ok .sn { color: var(--ok); }
 .set.ok .sc { opacity: 1; color: #04210d; background: var(--ok); border-color: var(--ok); }
 .set .sv.pr { color: #ffd60a; }
-.set.now {
-  color: var(--text); background: rgba(10, 132, 255, 0.16);
-  box-shadow: inset 0 0 0 1.5px rgba(10, 132, 255, 0.75);
-  animation: now 2.4s ease-in-out infinite;
-}
-.set.now .sc { opacity: 1; color: var(--accent-t); }
 .set.warm .sn, .set .wl { color: var(--warn); }
 .set .wl { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-/* Под отдыхом и «Начинаем» мерцание стоит: тень плюс размытие поверх каждый кадр съедают батарею */
-main:has(> .rest) .set.now, .card.cur:has(.setbar) .set.now { animation: none; } /* и пока идёт подход: телефон в кармане */
-@keyframes now { 50% { box-shadow: inset 0 0 0 1.5px rgba(10, 132, 255, 0.75), 0 0 22px rgba(10, 132, 255, 0.35); } }
 
 /* Идёт подход: что за подход и его таймер, точка пульсирует, пока таймер идёт */
 .setbar { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
@@ -189,17 +180,23 @@ main:has(> .rest) .setbar b::before { animation: none; }
 .setbar b.hit { color: var(--ok); } /* цель планки или кардио взята */
 
 /* «Завершить подход» прилипает к низу над меню: на SE с открытыми цифрами она иначе уходит под меню */
-.donerow { position: sticky; z-index: 3; bottom: calc(env(safe-area-inset-bottom) + 84px); }
+.donerow { position: sticky; z-index: 3; bottom: calc(env(safe-area-inset-bottom) + 84px); scroll-margin-bottom: calc(env(safe-area-inset-bottom) + 84px); }
 /* С открытыми цифрами не прилипает: иначе лежит поверх −/+ и забирает их нажатия. Видимой её держит прокрутка к .swapl */
 .card.cur:has(.steps) .donerow { position: static; }
 .swapl { scroll-margin-bottom: calc(env(safe-area-inset-bottom) + 84px); }
-.donerow .toggle { background: rgba(28, 28, 30, 0.92); }
+.card.cur > .toggle { justify-self: start; }
+@media (max-width: 360px) {
+  .done-btn { padding-inline: 12px; font-size: 17px; }
+}
 /* Кардио на отдыхе: поле км подсвечено, его надо вписать */
 .lastset.ask .mstep:first-child { border-color: rgba(10, 132, 255, 0.75); box-shadow: 0 0 0 1px rgba(10, 132, 255, 0.35); }
-.rest-h.fin { color: var(--ok); }
 
 /* Сделанный подход на отдыхе: две компактные крутилки рядом */
 .lastset { display: grid; gap: 6px; width: min(100%, 340px); }
+.lastset .row { text-align: left; }
+.lastset .result { display: block; margin-top: 2px; }
+.lastset .link { flex: none; }
+.rest-feel { display: grid; gap: 4px; }
 .msteps { display: flex; gap: 8px; }
 .mstep { flex: 1; min-width: 0; display: flex; align-items: center; padding: 3px; border-radius: 16px; background: rgba(0, 0, 0, 0.28); border: 1px solid var(--stroke); }
 .mstep button { width: 44px; height: 44px; flex: none; font-size: 24px; color: var(--text); background: var(--fill); border-radius: 12px; }
@@ -242,14 +239,18 @@ main:has(> .rest) .setbar b::before { animation: none; }
 .chip.pr { color: #ffd60a; box-shadow: inset 0 0 0 1px rgba(255, 214, 10, 0.6); }
 .chip.on { background: var(--accent); color: #fff; }
 
-/* Вес и повторы: друг под другом, крупно */
+/* На узких экранах оставляем всю ширину числу и двум кнопкам. */
 .steps { display: grid; gap: 8px; }
+.intro .steps { width: min(100%, 340px); }
+@media (min-width: 390px) {
+  .steps:has(.step + .step) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .step { display: flex; align-items: center; padding: 4px; border-radius: 18px; background: rgba(0, 0, 0, 0.28); border: 1px solid var(--stroke); }
-.step button { width: 64px; height: 56px; flex: none; font-size: 30px; color: var(--text); background: var(--fill); border-radius: 14px; }
+.step button { width: 44px; height: 44px; flex: none; font-size: 24px; color: var(--text); background: var(--fill); border-radius: 12px; }
 .step label { flex: 1; min-width: 0; display: grid; justify-items: center; }
 .step input {
   width: 100%; text-align: center; background: none; border: 0; outline: none;
-  font-size: 34px; font-weight: 600; font-variant-numeric: tabular-nums;
+  font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums;
   -webkit-user-select: text; user-select: text;
 }
 .step small { font-size: 12px; color: var(--muted); margin-top: -4px; }
@@ -323,7 +324,7 @@ textarea { margin: 8px 0; font-size: 16px; resize: vertical; }
   padding: calc(env(safe-area-inset-top) + 20px) 24px calc(env(safe-area-inset-bottom) + 24px);
   overflow-y: auto; overscroll-behavior: contain;
   text-align: center;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(5, 6, 10, 0.88);
   -webkit-backdrop-filter: blur(36px) saturate(150%);
   backdrop-filter: blur(36px) saturate(150%);
   animation: fade 0.3s ease;
@@ -436,6 +437,8 @@ img.th.loaded, .anim img.loaded:first-child { opacity: 1; }
 .plist .pl.drag .grip { color: var(--accent-t); }
 /* «Начинаем»: «Заменить» и «Начать с другого» в одну строку */
 .rest .links { justify-content: center; gap: 4px; }
+.rest-actions { flex-wrap: wrap; }
+.rest .rest-actions .link { min-height: 44px; }
 
 /* Недельное кольцо */
 .card.week { display: flex; align-items: center; gap: 14px; }

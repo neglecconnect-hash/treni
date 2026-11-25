@@ -22,8 +22,8 @@ const II = icon => `<span class="ii">${icon}</span>`;
 // Мини-гайд: [заголовок, текст с разметкой]. Тексты для человека в зале: коротко, без терминов
 const GUIDE_USE = [
   ['Сегодня', `Приложение само собирает тренировку из упражнений, которых давно не было. Порядок меняется пальцем за ${II(ICON_GRIP)}. Не хочешь упражнение: ${II(ICON_SWAP)} заменит на похожее, ${II(ICON_X)} уберёт. Потом «Приступить»: покажет первое упражнение и как его делать, жми «Начать подход». Хочешь начать с другого: там же «Начать с другого».`],
-  ['Подход', 'Подходы идут списком, текущий подсвечен синим, вес и повторы уже стоят по плану. «Начать подход» запускает таймер подхода. Закончишь, жми «Завершить подход»: строка позеленеет, начнётся отдых. Вышло иначе: поправь цифры прямо на экране отдыха. Хочешь другой вес заранее: нажми на синюю строку, там же кнопка «Разминка».'],
-  ['Отдых', 'Хочешь чередовать упражнения: нажми «Сменить упражнение» и выбери следующее. Отдых продолжится, а сделанные подходы сохранятся. Когда будешь готов, жми «Начать подход». С часами смотри на пульс: ниже порога 110 в начале и 115 ближе к концу. Таймер зеленеет, когда в прошлый раз уже было пора.'],
+  ['Подход', '«Начать подход» запускает таймер. Вес и повторы уже подставлены. Если получилось иначе, поправь поля и нажми «Завершить и записать».'],
+  ['Отдых', 'Под таймером виден записанный результат, его можно исправить. В «Списке тренировки» можно вернуться к любому упражнению или добавить новое. Когда будешь готов, жми «Начать подход».'],
   ['Ошибка в цифрах', 'На экране отдыха поправь вес и повторы кнопками − и +. Или нажми на зелёный подход в списке: он удалится, а внизу будет «Вернуть».'],
   ['Конец', '«Закончить»: итог, сколько поднято, рекорды. Если подключён GitHub, тренировка сама сохранится там, если нет, время от времени делай бэкап в Настройках.'],
   ['Пульс', 'Дома запусти команду «Трени пульс» и нажми «Вставить пульс» на экране итога. Приложение разберёт каждый отдых. Как собрать команду: вторая вкладка этого гайда.'],
@@ -128,7 +128,7 @@ function normalize(d) {
       : f.programs,
     plan: d.plan && Array.isArray(d.plan.items) ? { date: String(d.plan.date), items: d.plan.items.map(normItem) } : null,
     active: a && Array.isArray(a.items) && Array.isArray(a.sets)
-      ? { ...a, items: a.items.map(normItem), sets: a.sets.map(normSet), rests: arr(a.rests).map(normRest), cur: num(a.cur) || 0 }
+      ? { ...a, items: a.items.map(i => ({ ...normItem(i), ...(i?.extra ? { extra: true } : {}) })), sets: a.sets.map(normSet), rests: arr(a.rests).map(normRest), cur: num(a.cur) || 0 }
       : null,
   };
 }
@@ -430,14 +430,20 @@ function draftFor(i) {
   const kind = kindOf(it.ex);
   // Кардио: км не тащим с прошлого раза (иначе дистанция молча повторится), их вписывают на отдыхе
   if (kind === 'cardio') return { w: 0, r: it.reps, warm: false };
-  if (p?.warm && !(d && !d.warm)) return { w: p.w ?? 0, r: p.r ?? it.reps, warm: true };
+  if (isWeight(kind) && p?.warm && !(d && !d.warm)) return { w: p.w ?? 0, r: p.r ?? it.reps, warm: true };
   // Планка: цель следующего подхода по плану, а не сколько вышло в прошлом
   if (d && !d.warm) return { w: d.w, r: kind === 'time' ? it.reps : d.r, warm: false };
   return { w: suggest(lastOf(it.ex), it, kind).w ?? 0, r: it.reps, warm: false };
 }
 
-// Все рабочие подходы по плану сделаны
-const allDone = a => a.items.every(i => a.sets.filter(s => s.ex === i.ex && !s.warm).length >= i.sets);
+const workCount = (a, it) => a.sets.filter(s => s.ex === it.ex && !s.warm).length;
+const plannedItems = a => a.items.filter(it => !it.extra);
+const allDone = a => plannedItems(a).every(it => workCount(a, it) >= it.sets);
+function setProgress(it, work) {
+  if (it.extra) return `${work} вне плана`;
+  if (work > it.sets) return `${it.sets} по плану + ${work - it.sets}`;
+  return `${work} из ${it.sets}`;
+}
 
 // Таймер подхода. Планка: 5 секунд «приготовься», чтобы дойти до коврика, а не записать это в удержание
 function startSet(a) {
@@ -465,7 +471,9 @@ function beep() {
 
 // Следующее упражнение, где ещё не все рабочие подходы: сначала ниже по списку, потом пропущенные выше
 function nextIdx(A) {
-  const left = i => A.sets.filter(s => s.ex === A.items[i].ex && !s.warm).length < A.items[i].sets;
+  const current = A.items[A.cur];
+  if (current && (A.nextChosen || (current.extra && workCount(A, current) < current.sets))) return A.cur;
+  const left = i => !A.items[i].extra && workCount(A, A.items[i]) < A.items[i].sets;
   const keys = [...A.items.keys()];
   return [A.cur, ...keys.filter(i => i > A.cur), ...keys.filter(i => i < A.cur)].find(i => A.items[i] && left(i)) ?? A.cur;
 }
@@ -493,8 +501,10 @@ function startWith(name, program, items) {
 
 const stepper = (f, v, unit) => `<div class="step">
   <button data-act="step" data-f="${f}" data-d="-1" aria-label="меньше">−</button>
-  <label><input data-in="${f}" inputmode="${f === 'w' ? 'decimal' : 'numeric'}" value="${fmtW(v)}"><small>${unit}</small></label>
+  <label><input data-in="${f}" aria-label="${f === 'r' ? unit : `Вес, ${unit}`}" inputmode="${f === 'w' ? 'decimal' : 'numeric'}" value="${fmtW(v)}"><small>${unit}</small></label>
   <button data-act="step" data-f="${f}" data-d="1" aria-label="больше">+</button></div>`;
+
+const setFields = (D, kind) => `<div class="steps">${noW(kind) ? '' : stepper('w', D.w, UNIT[kind])}${stepper('r', D.r, RUNIT[kind] || 'повторов')}</div>`;
 
 function workoutPage() {
   const A = db.active, n = A.items.length;
@@ -510,51 +520,41 @@ function workoutPage() {
     if (i !== A.cur || view.fold) {
       const chips = done.map(s => `<span class="chip${s.warm ? ' warm' : ''}${s.pr ? ' pr' : ''}">${s.pr ? '★ ' : ''}${setText(s, kind)}</span>`).join('');
       return `<section class="card glass mini${work >= it.sets ? ' done' : ''}${i === A.cur ? ' now' : ''}" data-act="cur" data-i="${i}">
-        <div class="row"><span class="exh">${thumb(it.ex)}<h3>${esc(it.ex)}</h3></span><span class="muted sm num">${work} из ${esc(it.sets)}<i class="chev">${ICON_UP}</i></span></div>
+        <div class="row"><span class="exh">${thumb(it.ex)}<h3>${esc(it.ex)}</h3></span><span class="muted sm num">${setProgress(it, work)}<i class="chev">${ICON_UP}</i></span></div>
         ${chips ? `<div class="chips">${chips}</div>` : ''}</section>`;
     }
     const D = A.draft || (A.draft = draftFor(i));
     const sg = suggest(lastOf(it.ex), it, kind);
-    // Подходы чек-листом: сделанные зелёные с галочкой, текущий подсвечен, впереди бледные по плану.
-    // Нажатие на сделанный удаляет его (внизу «Вернуть»)
+    // Подходы с галочкой уже записаны. Нажатие удаляет запись с возможностью отмены.
     let wn = 0;
     const no = s => (s.warm ? 'Р' : ++wn);
     const wl = s => (s.warm ? '<small class="wl">разминка</small>' : '');
     const rows = done.map(s => `<div class="set ok${s.warm ? ' warm' : ''}"><span class="sn">${no(s)}</span>
       <button class="sv${s.pr ? ' pr' : ''}" data-act="delset" data-k="${s.k}">${s.pr ? '★ ' : ''}${setText(s, kind)}</button>${wl(s)}<span class="sc">${ICON_OK}</span></div>`);
-    // Цифры спрятаны, пока всё по плану: новичка поля сбивают («настрой и начни»). Строка и ссылка под списком
-    // открывают и закрывают их на одном месте. Веса ещё не было никогда: открыты сразу, иначе запишется 0 кг
-    // То же, когда подсказка просит плитку тяжелее: вес новой плитки знает только тренажёр
-    const needW = isWeight(kind) && (sg.w == null || sg.ask) && !D.warm && !done.some(s => !s.warm);
-    const ed = view.edit ?? needW;
-    rows.push(`<div class="set now${D.warm ? ' warm' : ''}"><span class="sn">${no(D)}</span><button class="sv" data-act="edit">${setLong(D, kind)}</button>${wl(D)}
-      <button class="sc" data-act="done" aria-label="подход сделан"></button></div>`);
-    const fw = D.warm ? { w: sg.w ?? 0, r: it.reps } : D;
-    for (let k = wn; k < it.sets; k++) rows.push(`<div class="set"><span class="sn">${k + 1}</span><span class="sv">${setText(fw, kind)}</span><span class="sc"></span></div>`);
+    const timed = kind === 'time' || kind === 'cardio';
+    const ed = !timed || view.edit;
+    const stepName = kind === 'cardio' ? 'Кардио' : D.warm ? 'Разминка' : it.extra ? `Подход ${work + 1}`
+      : work < it.sets ? `Подход ${work + 1} из ${it.sets}` : `Дополнительный подход ${work + 1}`;
     return `<section class="card glass cur">
       <div class="row"><button class="exh" data-act="info" data-ex="${esc(it.ex)}">${thumb(it.ex)}<b class="h2">${esc(it.ex)}</b></button>
-        <span class="row"><span class="muted sm num">сделано ${work} из ${esc(it.sets)}</span><button class="ic" data-act="fold" aria-label="свернуть">${ICON_UP}</button></span></div>
-      <p class="muted sm">${kind === 'cardio' ? `План: ${esc(it.reps)} мин` : `План: ${esc(it.sets)} ${plural(it.sets, 'подход', 'подхода', 'подходов')} по ${esc(it.reps)} ${kind === 'time' ? 'сек' : 'раз'}, отдых ${hasHR() ? `до ♥ ${thrFor(i, n, db.settings)}` : 'около 1,5 мин'}`}</p>
-      <p class="hint">${esc(sg.text)}</p>
-      ${A.setStart ? `<div class="setbar"><span>${kind === 'cardio' ? 'Идёт' : D.warm ? 'Разминка' : work < it.sets ? `Подход ${work + 1} из ${esc(it.sets)}` : 'Ещё подход'}</span><b class="num" id="settimer"${kind === 'time' ? ` data-goal="${esc(D.r)}"` : kind === 'cardio' ? ` data-goal="${esc(D.r * 60)}"` : ''}>0:00</b></div>` : ''}
-      <div class="sets">${rows.join('')}</div>
-      <button class="link accent edl${ed ? ' on' : ''}" data-act="edit">${ed ? 'Свернуть' : kind === 'cardio' || kind === 'time' ? 'Поменять план' : 'Изменить подход'}${ICON_UP}</button>
-      ${D.warm && !ed ? '<button class="link accent" data-act="warm">Пропустить разминку</button>' : ''}
-      ${ed ? `<div class="steps">${noW(kind) ? '' : stepper('w', D.w, UNIT[kind])}${stepper('r', D.r, RUNIT[kind] || 'повторов')}</div>` : ''}
-      <p class="muted sm">${kind === 'cardio' ? 'Время пишет таймер. Закончишь, жми «Завершить», километры впишешь на отдыхе'
-        : kind === 'time' ? 'Держи, время пишет таймер. Отпустил, жми «Завершить подход»'
-        : `${sg.ask && needW ? 'Впиши вес новой плитки. ' : needW ? 'Впиши вес, начни с лёгкого. ' : ''}Вышло иначе: поправишь на отдыхе`}</p>
+        <span class="row"><span class="muted sm num">${setProgress(it, work)}</span><button class="ic" data-act="fold" aria-label="свернуть">${ICON_UP}</button></span></div>
+      ${!work && !timed ? `<p class="hint">${esc(sg.text)}</p>` : ''}
+      <div class="setbar"><span>${stepName}</span>${A.setStart ? `<b class="num" id="settimer"${kind === 'time' ? ` data-goal="${esc(D.r)}"` : kind === 'cardio' ? ` data-goal="${esc(D.r * 60)}"` : ''}>0:00</b>` : ''}</div>
+      ${ed ? setFields(D, kind) : ''}
       <div class="row donerow">
-        ${ed && isWeight(kind) ? `<button class="toggle${D.warm ? ' on' : ''}" data-act="warm">Разминка</button>` : ''}
-        <button class="btn primary grow done-btn" data-act="done">${ICON_OK} Завершить${kind === 'cardio' ? '' : D.warm ? ' разминку' : ' подход'}</button>
+        <button class="btn primary grow done-btn" data-act="done">${ICON_OK} Завершить и записать</button>
       </div>
+      ${isWeight(kind) ? `<button class="toggle${D.warm ? ' on' : ''}" data-act="warm">Разминка</button>` : ''}
+      ${timed ? `<button class="link accent edl${ed ? ' on' : ''}" data-act="edit">${ed ? 'Свернуть' : 'Ввести вручную'}${ICON_UP}</button>` : ''}
+      <p class="muted sm">${it.extra ? 'Вне плана' : kind === 'cardio' ? `Цель ${esc(it.reps)} мин` : `План: ${esc(it.reps)} ${kind === 'time' ? 'сек' : 'раз'}`}${hasHR() ? `, отдых до ♥ ${thrFor(i, n, db.settings)}` : ''}</p>
+      ${rows.length ? `<div class="sets">${rows.join('')}</div>` : ''}
       <button class="link swapl" data-act="swap" data-ctx="work" data-i="${i}">${ICON_SWAP} Заменить упражнение</button></section>`;
   }).join('');
   // Полоска всей тренировки: сколько рабочих подходов из плана уже позади
-  const plan = A.items.reduce((a, it) => a + it.sets, 0);
-  const got = A.items.reduce((a, it) => a + Math.min(it.sets, A.sets.filter(s => s.ex === it.ex && !s.warm).length), 0);
+  const plan = plannedItems(A).reduce((a, it) => a + it.sets, 0);
+  const got = plannedItems(A).reduce((a, it) => a + Math.min(it.sets, workCount(A, it)), 0);
   return `<header class="hd"><p class="sub num" id="elapsed"></p><h1 class="t2">${esc(A.name)}</h1>
-    <div class="bar" role="progressbar" aria-valuenow="${got}" aria-valuemax="${plan}"><i style="width:${plan ? (got / plan) * 100 : 0}%"></i></div></header>
+    ${plan ? `<div class="bar" role="progressbar" aria-label="План тренировки" aria-valuenow="${got}" aria-valuemax="${plan}"><i style="width:${got / plan * 100}%"></i></div>` : ''}</header>
     ${stale}${cards}
     ${view.fold && A.items[A.cur] ? `<button class="btn primary wide go-btn" data-act="cur" data-i="${A.cur}">Продолжить: ${esc(A.items[A.cur].ex)}</button>` : ''}
     <button class="btn wide" data-act="add" data-ctx="work">Добавить упражнение</button>
@@ -566,16 +566,18 @@ function workoutPage() {
 function readyOverlay(A) {
   const it = A.items[A.cur], D = A.draft || (A.draft = draftFor(A.cur)), c = CAT[it.ex], kind = kindOf(it.ex);
   const media = c ? `<div class="anim next"><img src="img/${c.img}-0.jpg" alt=""><img src="img/${c.img}-1.jpg" alt=""></div>` : '';
-  const askW = isWeight(kind) && !D.warm && suggest(lastOf(it.ex), it, kind).w == null;
+  const askW = isWeight(kind) && !D.warm && !D.w && suggest(lastOf(it.ex), it, kind).w == null;
+  const strength = kind !== 'cardio' && kind !== 'time';
   return `<div class="rest intro" role="dialog" aria-label="Начинаем">
     <h2 class="rest-h">Начинаем</h2>
     <p class="muted">Упражнение ${A.cur + 1} из ${A.items.length}</p>
     ${media}<p class="h2">${esc(it.ex)}</p>
-    <p class="next">${kind === 'cardio' ? `План: ${esc(it.reps)} мин` : `${D.warm ? 'Разминка' : `Подход 1 из ${esc(it.sets)}`}: ${askW ? `${esc(it.reps)} раз, вес выбери на месте, начни с лёгкого` : setLong(D, kind)}`}</p>
+    <p class="next">${strength ? D.warm ? 'Разминка' : `Подход 1 из ${esc(it.sets)}` : kind === 'cardio' ? `Цель: ${esc(it.reps)} мин` : setLong(D, kind)}</p>
     ${c ? `<ul class="cues">${c.cues.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
     <div class="row links"><button class="link accent" data-act="swap" data-ctx="work" data-i="${A.cur}">Занято? Заменить</button>
       ${A.items.length > 1 ? '<button class="link accent" data-act="pickfirst">Начать с другого</button>' : ''}</div>
-    <p class="muted sm tip">Заверши подход, чтобы перейти к отдыху.</p>
+    ${askW ? '<p class="muted sm">Вес выбери на месте</p>' : ''}
+    ${strength ? setFields(D, kind) : ''}
     <button class="btn primary xl" data-act="go">Начать подход</button>
     <button class="link" data-act="finish">Отменить</button></div>`;
 }
@@ -588,21 +590,23 @@ const mstep = (f, v, unit) => `<div class="mstep">
 function lastSet(s, A) {
   const kind = kindOf(s.ex), dur = s.st && s.t - s.st >= 1000 ? (s.t - s.st) / 1000 : 0;
   const it = A.items.find(i => i.ex === s.ex), work = A.sets.filter(x => x.ex === s.ex && !x.warm);
+  const editing = view.editLast ?? kind === 'cardio';
   // «Как было?» один раз на упражнение, после последнего рабочего подхода: его ответ и берёт подсказка.
   // Под кнопками сразу видно, что выйдет в следующий раз
   let feel = '';
-  if (!s.warm && kind !== 'cardio' && it && work.length >= it.sets) {
+  if (!s.warm && kind !== 'cardio' && it && work.length === it.sets) {
     const nx = suggest(workStats(work), it, kind);
     const next = isWeight(kind) && !nx.ask && nx.w != null ? `В следующий раз: ${fmtW(nx.w)} ${UNIT[kind] || 'кг'}` : 'Подскажу на следующий раз';
     feel = `<div class="feel"><span class="muted sm">Как было?</span>${[['easy', 'Легко'], ['ok', 'Норм'], ['hard', 'Тяжело']]
       .map(([v, t]) => `<button class="chip${(s.feel || 'ok') === v ? ' on' : ''}" data-act="feel" data-v="${v}">${t}</button>`).join('')}</div>
       <p class="muted sm">${next}</p>`;
   }
-  const head = kind === 'cardio' ? `Кардио: ${esc(s.r)} мин. Сколько км? Глянь на табло`
-    : `${s.warm ? 'Разминка сделана' : 'Подход сделан'}${dur ? ` за ${fmtSec(dur)}` : ''}. Вышло иначе? Поправь`;
-  return `<div class="lastset${kind === 'cardio' ? ' ask' : ''}">
-    <p class="muted sm">${head}</p>
-    <div class="msteps">${noW(kind) ? '' : mstep('w', s.w, UNIT[kind] || 'кг')}${mstep('r', s.r, RUNIT[kind] || 'раз')}</div>${feel}</div>`;
+  const result = `${s.warm ? 'Разминка записана' : 'Записано'} ${setLong(s, kind)}${dur && kind !== 'time' && kind !== 'cardio' ? ` за ${fmtSec(dur)}` : ''}`;
+  const markup = `<div class="lastset${kind === 'cardio' ? ' ask' : ''}">
+    <div class="row"><p class="sm">${esc(s.ex)}<span class="muted result">${editing ? kind === 'cardio' ? 'Впиши километры с табло' : 'Записанный подход' : result}</span></p>
+    <button class="link accent" data-act="lastedit" aria-expanded="${editing}">${editing ? 'Готово' : 'Изменить'}</button></div>
+    ${editing ? `<div class="msteps">${noW(kind) ? '' : mstep('w', s.w, UNIT[kind] || 'кг')}${mstep('r', s.r, RUNIT[kind] || 'раз')}</div>` : ''}</div>`;
+  return { markup, feel: feel && `<div class="rest-feel">${feel}</div>` };
 }
 
 function restOverlay(A) {
@@ -610,39 +614,45 @@ function restOverlay(A) {
   const ps = [...db.sessions].reverse().find(s => s.rests?.some(r => r.ex === R.ex && r.toThr != null));
   const was = ps && avg(ps.rests.filter(r => r.ex === R.ex && r.toThr != null).map(r => r.toThr));
   const ni = nextIdx(A), it = A.items[ni];
-  const doneWork = A.sets.filter(s => s.ex === it.ex && !s.warm).length;
-  const left = doneWork < it.sets;
+  const doneWork = workCount(A, it), planDone = allDone(A);
+  const nextReady = A.nextChosen || doneWork < it.sets;
   const nd = ni === A.cur ? A.draft : draftFor(ni), nk = kindOf(it.ex);
   // Новое упражнение без истории веса: не «0 кг», а честно «выберешь на месте»
-  const nw = isWeight(nk) && !nd.warm && suggest(lastOf(it.ex), it, nk).w == null ? `${esc(it.reps)} раз, вес выберешь на месте` : setLong(nd, nk);
-  const next = left
-    ? `Дальше: ${esc(it.ex)}, ${nk === 'cardio' ? `${esc(it.reps)} мин` : `${nd.warm ? 'разминка' : `подход ${doneWork + 1} из ${esc(it.sets)}`}, ${nw}`}`
-    : 'Можно заканчивать или сделать ещё подход';
+  const askW = isWeight(nk) && !nd.warm && !nd.w && !doneWork && suggest(lastOf(it.ex), it, nk).w == null;
+  const nw = askW ? `${esc(nd.r)} раз, вес выберешь на месте` : setLong(nd, nk);
+  const number = nd.warm ? 'разминка' : it.extra || doneWork >= it.sets ? `подход ${doneWork + 1}` : `подход ${doneWork + 1} из ${it.sets}`;
+  const next = `Дальше: ${esc(it.ex)}, ${nk === 'cardio' ? `${esc(it.reps)} мин` : `${number}, ${nw}`}`;
   // Переход на новое упражнение: показываем, как его делать, пока отдыхаешь, и даём заменить, если тренажёр занят
-  const c = left && it.ex !== R.ex && CAT[it.ex];
+  const c = nextReady && it.ex !== R.ex && CAT[it.ex];
   const media = c ? `<div class="anim next"><img src="img/${c.img}-0.jpg" alt=""><img src="img/${c.img}-1.jpg" alt=""></div>` : '';
-  const swap = left && it.ex !== R.ex ? `<button class="link accent" data-act="swap" data-ctx="work" data-i="${ni}">Занято или не подходит? Заменить</button>` : '';
+  const swap = nextReady && it.ex !== R.ex ? `<button class="link accent" data-act="swap" data-ctx="work" data-i="${ni}">Заменить следующее</button>` : '';
   // Без прошлых замеров цель отдыха полторы минуты: таймер так же зеленеет. Пульс ни разу не вставляли
   // (часов нет или не настроено): главная строка про полторы минуты, порог пульса мелко для тех, кто с часами
   const goal = was || 90;
-  const buttons = left
-    ? '<button class="btn primary xl" data-act="go">Начать подход</button><button class="link" data-act="finish">Закончить тренировку</button>'
-    : '<button class="btn primary xl" data-act="finish">Закончить тренировку</button><button class="link" data-act="go">Ещё подход</button>';
+  const completed = last && A.items.find(i => i.ex === last.ex);
+  const again = completed && workCount(A, completed) >= completed.sets;
+  const saved = last && lastSet(last, A);
   const pulse = hasHR()
     ? `<p class="thr-t"><span class="heart" aria-hidden="true">♥</span> подход, когда пульс ниже <b>${esc(R.thr)}</b></p>`
     : `<p class="thr-t">Отдыхай около <b>1,5</b> минут</p><p class="muted sm">С часами: подход, когда пульс ниже ${esc(R.thr)}</p>`;
   return `<div class="rest" role="dialog" aria-label="Отдых">
-    <h2 class="rest-h${left ? '' : ' fin'}">${left ? 'Отдых' : 'Всё по плану!'}</h2>
-    ${last ? lastSet(last, A) : ''}
+    <h2 class="rest-h">Отдых</h2>
     <div class="timer" id="timer" data-hint="${Math.round(goal)}">0:00</div>
     ${pulse}
     ${was ? `<p class="muted sm" id="ready-no">В прошлый раз пульс падал до порога в среднем за ${fmtSec(was)}</p>
       <p class="sm ok" id="ready" hidden>Обычно к этому времени пульс уже ниже ${esc(R.thr)}. Глянь на часы</p>`
       : `<p class="muted sm" id="ready-no">Таймер позеленеет, когда пора</p>
       <p class="sm ok" id="ready" hidden>Полторы минуты прошло, можно начинать</p>`}
-    ${media}<p class="next">${next}</p>${swap}
-    ${A.items.length > 1 && !allDone(A) ? '<button class="link accent" data-act="picknext">Сменить упражнение</button>' : ''}
-    ${buttons}</div>`;
+    ${saved?.markup || ''}
+    ${planDone && A.items.some(it => !it.extra) ? '<p class="ok sm">План выполнен</p>' : ''}
+    ${nextReady ? `${media}<p class="next">${next}</p><button class="btn primary xl" data-act="go">Начать подход</button>` : ''}
+    <div class="row links rest-actions">
+      <button class="link accent" data-act="picknext">Список тренировки</button>
+      ${again ? `<button class="link accent" data-act="again" data-i="${A.items.indexOf(completed)}">Ещё подход</button>` : ''}
+      ${planDone ? '<button class="link accent" data-act="add" data-ctx="work">Добавить упражнение</button>' : ''}
+    </div>
+    <button class="link" data-act="finish">Закончить тренировку</button>
+    ${swap}${saved?.feel || ''}</div>`;
 }
 
 // ---------- сегодня ----------
@@ -812,11 +822,11 @@ function firstSheet() {
 // На отдыхе выбираем следующий подход, не переставляя программу и не останавливая отдых.
 function nextSheet() {
   const a = db.active;
-  return `<h2>Следующее упражнение</h2><div class="group glass">${a.items.map((it, i) => {
-    const work = a.sets.filter(s => s.ex === it.ex && !s.warm).length;
-    return `<button class="li" data-act="setnext" data-i="${i}"${work >= it.sets ? ' disabled' : ''}>
-      ${thumb(it.ex)}<span class="txt"><b>${esc(it.ex)}</b><small class="muted">${work} из ${esc(it.sets)}${work >= it.sets ? ', выполнено' : ''}</small></span></button>`;
-  }).join('')}</div>`;
+  return `<h2>Список тренировки</h2><div class="group glass">${a.items.map((it, i) => {
+    const work = workCount(a, it), done = work >= it.sets;
+    return `<button class="li" data-act="setnext" data-i="${i}">
+      ${thumb(it.ex)}<span class="txt"><b>${esc(it.ex)}</b><small class="muted">${setProgress(it, work)}${done ? ' · ещё подход' : ''}</small></span></button>`;
+  }).join('')}</div><button class="btn wide" data-act="add" data-ctx="work">Добавить упражнение</button>`;
 }
 
 function conflictSheet() {
@@ -1185,13 +1195,13 @@ const ACT = {
   setnext: d => {
     const a = A(), i = +d.i;
     if (!a?.rest || !Number.isInteger(i) || i < 0 || i >= a.items.length) return false;
-    const it = a.items[i];
-    if (a.sets.filter(s => s.ex === it.ex && !s.warm).length >= it.sets) return false;
     if (i !== a.cur) { a.cur = i; a.draft = draftFor(i); }
+    a.nextChosen = true;
     delete view.fold;
     delete view.edit;
     delete view.sheet;
   },
+  again: d => { if (ACT.setnext(d) !== false) ACT.go(); },
   setfirst: d => {
     const a = A(), i = a.items.findIndex(x => x.ex === d.ex);
     a.items.unshift(a.items.splice(i, 1)[0]);
@@ -1204,15 +1214,18 @@ const ACT = {
   close: () => closeSheet(),
   pick: d => {
     const S = view.sheet, list = sheetList(S), it = guessItem(d.ex);
-    let replace = S.t === 'swap' || S.swap;
+    const replace = S.t === 'swap' || S.swap;
     if (S.ctx === 'work') {
       const a = A();
       // По заменяемому уже есть подходы: не прячем их, а ставим новое упражнение рядом
-      if (replace && a.sets.some(s => s.ex === list[S.i].ex)) { list.splice(S.i + 1, 0, it); a.cur = S.i + 1; replace = false; }
-      else if (replace) list[S.i] = it;
-      else { list.push(it); a.cur = list.length - 1; }
+      if (replace) {
+        if (list[S.i].extra || workCount(a, list[S.i]) >= list[S.i].sets) { it.extra = true; it.sets = 1; }
+        if (a.sets.some(s => s.ex === list[S.i].ex)) { list.splice(S.i + 1, 0, it); a.cur = S.i + 1; }
+        else { list[S.i] = it; if (a.rest) a.cur = S.i; }
+      } else { list.push({ ...it, extra: true, sets: 1 }); a.cur = list.length - 1; }
       a.draft = draftFor(a.cur);
-      startSet(a);
+      if (a.rest) a.nextChosen = true;
+      else if (!a.ready) startSet(a);
       delete view.fold;
       delete view.edit;
     } else if (replace) list[S.i] = it;
@@ -1281,10 +1294,13 @@ const ACT = {
   },
   // «Завершить подход»: время подхода от «Начать подход» (st), цифры по плану, поправить можно на отдыхе
   done: () => {
-    const a = A(), it = curItem(), D = a.draft, t = Date.now(), kind = kindOf(it.ex);
+    const a = A();
+    if (!a || a.rest || a.ready) return false;
+    const it = curItem(), D = a.draft, t = Date.now(), kind = kindOf(it.ex);
     // Двойной тап по «Начать подход» попадает в «Завершить»: подход короче 0,7 с не бывает. У планки и «приготовься»
     if (a.setStart && t - a.setStart < 700) return false;
     const set = { ex: it.ex, w: noW(kind) ? 0 : D.w, r: D.r, warm: D.warm, t };
+    if (it.extra || (!D.warm && workCount(a, it) >= it.sets)) set.extra = true;
     if (a.setStart && t - a.setStart < 3 * 36e5) {
       set.st = a.setStart;
       // Планка и кардио: время с таймера подхода, если цифры не вписали руками; поправить можно на отдыхе
@@ -1297,14 +1313,16 @@ const ACT = {
     a.sets.push(set);
     a.rest = { ex: it.ex, start: t, thr: thrFor(a.cur, a.items.length, db.settings) };
     a.draft = draftFor(a.cur);
+    delete a.nextChosen;
     delete view.edit;
+    delete view.editLast;
     if (what) setTimeout(() => celebrate(recordText(what, kind), `${it.ex}: ${setText(set, kind)}`), 50);
-    else if (allDone(a) && !set.warm) setTimeout(() => celebrate('Всё по плану!', 'Можно заканчивать'), 50);
   },
   feel: d => {
     const s = A().sets.at(-1);
     if (d.v === 'ok') delete s.feel; else s.feel = d.v;
   },
+  lastedit: () => { view.editLast = !$('.rest .lastset .msteps'); },
   // −/+ на экране отдыха: правим последний подход, рекорд и черновик следующего пересчитываются
   lstep: d => {
     const a = A(), s = a.sets.at(-1), kind = kindOf(s.ex), inc = d.f === 'w' ? STEP[kind] : rStep(kind);
@@ -1315,10 +1333,13 @@ const ACT = {
     const a = A();
     // Время тренировки с первого подхода: «Начинаем» могли оставить открытым со вчера
     if (a.ready) { delete a.ready; a.startedAt = Date.now(); startSet(a); return; }
+    if (!a.rest) return false;
     delete view.fold;
+    delete view.editLast;
     a.rests.push({ ...a.rest, end: Date.now() });
     a.rest = null;
     const ni = nextIdx(a);
+    delete a.nextChosen;
     if (ni !== a.cur) { a.cur = ni; a.draft = draftFor(ni); }
     startSet(a);
   },
@@ -1605,10 +1626,10 @@ function render() {
   if (changed) countUp();
   // После «Иду» текущая карточка в центре экрана, а не уехавшая за меню
   const cur = db.active && !db.active.rest && !db.active.ready && view.tab === 'today' ? db.active.cur : null; // под «Начинаем» рано: потом появится строка таймера
-  // С открытыми цифрами «Завершить подход» не прилипает: тогда прокрутка до низа карточки, чтобы её было видно над меню
+  // Оставляем поля и кнопку над нижним меню, включая узкие экраны.
   if (cur != null && cur !== lastCur) {
     const open = !!$('.card.cur .steps');
-    $(open ? '.card.cur .swapl' : '.card.cur')?.scrollIntoView({ block: open ? 'end' : 'center', behavior: 'smooth' });
+    $(open ? '.card.cur .donerow' : '.card.cur')?.scrollIntoView({ block: open ? 'end' : 'center', behavior: 'smooth' });
   }
   lastCur = cur;
   tick();

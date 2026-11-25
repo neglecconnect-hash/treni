@@ -18,11 +18,13 @@ export function workStats(sets) {
   const work = sets.filter(s => !s.warm && s.w != null);
   if (!work.length) return null;
   const top = Math.max(...work.map(s => s.w)), tops = work.filter(s => s.w === top);
+  const last = work.at(-1);
+  const rated = last.extra ? work.findLast(s => !s.extra || s.feel) : last;
   return {
     top,
     reps: tops.map(s => s.r),
-    // «Как было?» спрашиваем после последнего рабочего подхода упражнения: его ответ и берём. Хоть один «тяжело», значит тяжело
-    feel: work.some(s => s.feel === 'hard') ? 'hard' : work.at(-1).feel || null,
+    // Подходы сверх плана могут идти после ответа «Как было?». Берём последний ответ или любое «тяжело».
+    feel: work.some(s => s.feel === 'hard') ? 'hard' : rated?.feel || null,
     e1: Math.max(...work.map(s => e1rm(s.w, s.r))),
     tonnage: work.reduce((a, s) => a + s.w * (s.r || 0), 0),
   };
